@@ -12,19 +12,25 @@ Custom Claude Code mods (function-hook plugins) for the Mac and the ThinkPad. Th
 
 ## Install (each machine, once)
 
-This folder is a plugin marketplace. Each machine adds its own clone:
+`~/.claude/settings.json` syncs between the Mac and the ThinkPad, so the marketplace must use a path that is the same on both: `~/.claude/claude-mods`. That path is a symlink, local to each machine (`~/.claude/.gitignore` ignores it), to the machine's own clone.
+
+1. Clone this repo: `~/_WAJBKODING/repos/claude-mods` on the Mac, `~/Work/_WAJBKODING/repos/claude-mods` on the ThinkPad.
+2. Make the symlink: `ln -s <clone> ~/.claude/claude-mods`.
+3. Register the marketplace and install the mods at the user scope:
 
 ```bash
-claude plugin marketplace add ~/_WAJBKODING/repos/claude-mods
+claude plugin marketplace add ~/.claude/claude-mods
 ```
-
-On the ThinkPad the path is `~/Work/_WAJBKODING/repos/claude-mods`. Then install each mod at the user scope, for example:
 
 ```bash
-claude plugin install close-gate@claude-mods
+for m in close-gate waste-alarm verify-gate peer-radar deliverable-dock; do claude plugin install $m@claude-mods; done
 ```
 
-A folder marketplace is read from the folder itself. After a `git pull`, run `/reload-plugins`.
+4. `marketplace add` writes the expanded absolute path into `settings.json`. Change it back to `"path": "~/.claude/claude-mods"` (as for `nateherk-mods`), or the other machine gets a path that does not exist.
+
+A folder marketplace is read from the folder itself. After a `git pull`, run `/reload-plugins` (new sessions load the new code by themselves).
+
+Claude Code 2.1.293 or later. On 2.1.292, verify-gate cannot add its failure note (no `session.append`); the band still shows the failure.
 
 ## Check
 
