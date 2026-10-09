@@ -1,0 +1,20 @@
+{
+  "name": "waste-alarm",
+  "version": "0.1.0",
+  "description": "Count repeated shell commands and show token-dashboard tips.",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "threshold": {
+      "title": "Daily alert threshold",
+      "type": "number",
+      "default": 10,
+      "description": "Daily command count that shows an alert"
+    },
+    "tokenDashboard": {
+      "title": "Token Dashboard repository",
+      "type": "string",
+      "default": "",
+      "description": "Token Dashboard repository; empty means auto-detect"
+    }
+  }
+}

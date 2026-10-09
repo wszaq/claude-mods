@@ -1,0 +1,14 @@
+{
+  "name": "deliverable-dock",
+  "version": "0.1.0",
+  "description": "Record session deliverables and ship one to Downloads",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "extensions": {
+      "type": "string",
+      "title": "Deliverable extensions",
+      "default": ".pdf,.pptx,.docx,.xlsx,.html,.png,.jpg,.mp4,.mov,.zip",
+      "description": "Comma-separated deliverable file extensions"
+    }
+  }
+}

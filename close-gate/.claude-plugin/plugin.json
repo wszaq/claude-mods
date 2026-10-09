@@ -1,0 +1,6 @@
+{
+  "name": "close-gate",
+  "version": "0.1.0",
+  "description": "Show session close facts and give them to a handoff.",
+  "types": "./types/index.d.ts"
+}
