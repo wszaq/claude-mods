@@ -1,6 +1,6 @@
 {
   "name": "waste-alarm",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Count repeated shell commands and show token-dashboard tips.",
   "types": "./types/index.d.ts",
   "userConfig": {

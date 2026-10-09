@@ -28,7 +28,22 @@ for m in close-gate waste-alarm verify-gate peer-radar deliverable-dock; do clau
 
 4. `marketplace add` writes the expanded absolute path into `settings.json`. Change it back to `"path": "~/.claude/claude-mods"` (as for `nateherk-mods`), or the other machine gets a path that does not exist.
 
-A folder marketplace is read from the folder itself. After a `git pull`, run `/reload-plugins` (new sessions load the new code by themselves).
+## Update (after a code change or a `git pull`)
+
+The installed mods are copies made at install time, in `~/.claude/plugins/cache/claude-mods/<mod>/<version>/`. A change in the clone does nothing until you update them, and the update does nothing without a new version.
+
+1. Bump `version` in each changed `<mod>/.claude-plugin/plugin.json` and push.
+2. On each machine, after `git pull`:
+
+```bash
+claude plugin marketplace update claude-mods
+```
+
+```bash
+for m in close-gate waste-alarm verify-gate peer-radar deliverable-dock; do claude plugin update $m@claude-mods; done
+```
+
+3. Make sure that `settings.json` still has `"path": "~/.claude/claude-mods"`. Then open a new session or run `/reload-plugins`.
 
 Claude Code 2.1.293 or later. On 2.1.292, verify-gate cannot add its failure note (no `session.append`); the band still shows the failure.
 
