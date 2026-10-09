@@ -37,7 +37,7 @@ function fixture(on: On, files: Record<string, string>, exitCode = 0, delay = fa
   on('turn.complete', () => ({ text: '' }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('command.run', { command: 'verify' }, () => ({ text: '' }))
-  on('ui.render', { component: 'AbovePrompt' }, () => ({ type: 'Text', props: {}, children: ['base'] } as any))
+  on('ui.render', { component: 'AbovePrompt' }, ($, e) => $.ui.resolve(e).Text({ children: 'MARKER' }))
   return { clock, session, spawned, runs, setExitCode: (value: number) => { code = value }, setOutput: (value: string | undefined) => { output = value }, releaseProcess: () => release?.() }
 }
 
@@ -142,7 +142,7 @@ test('off stops automatic runs', async ($, on) => {
 
 test('Markdown advisory shows only the flag count', async ($, on) => {
   const kit = fixture(on, { '/home/test/.claude/skills/plain-language/plain-check.py': '' })
-  await $.session.start({ cwd: ROOT, surface: null, isInteractive: false })
+  await $.session.start({ cwd: ROOT, surface: null, isInteractive: true })
   await editAndFinish($, kit.clock, '/repo/note.md')
   expect(kit.spawned).toHaveLength(0)
   for (const surface of ['terminal', 'desktop'] as const) {
@@ -157,7 +157,7 @@ test('Markdown outside git gets an advisory in its own directory and no test che
     '/home/test/.claude/skills/plain-language/plain-check.py': '',
     '/vault/package.json': JSON.stringify({ scripts: { test: 'node test.js' } }),
   }, 0, false, null)
-  await $.session.start({ cwd: ROOT, surface: null, isInteractive: false })
+  await $.session.start({ cwd: ROOT, surface: null, isInteractive: true })
   await editAndFinish($, kit.clock, '/vault/note.md')
   expect(kit.spawned).toHaveLength(0)
   expect(kit.runs.some(run => run.argv[1]?.endsWith('plain-check.py') && run.cwd === '/vault' && run.argv[2] === '/vault/note.md')).toBe(true)
@@ -180,6 +180,7 @@ test('band shows running, pass, and fail on terminal and desktop', async ($, on)
     await $.turn.complete(TURN)
     await kit.clock.advance(0)
     expect((await ui.find({ type: 'Text' }))?.text).toContain('running')
+    expect(await ui.find({ type: 'Text', text: 'MARKER' })).toBeDefined()
     kit.releaseProcess()
     await kit.clock.advance(0)
     expect((await ui.find({ type: 'Text' }))?.text).toContain('✓ npm test')
@@ -192,4 +193,22 @@ test('band shows running, pass, and fail on terminal and desktop', async ($, on)
     expect((await ui.find({ type: 'Text' }))?.text).toContain('✗ npm test exit 1')
     await ui.unmount()
   }
+})
+
+test('empty band leaves only MARKER on terminal and desktop', async ($, on) => {
+  fixture(on, {})
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'verify-gate', surface, component: 'AbovePrompt', props: BAND })
+    expect((await ui.drawn()).type).toBe('Text')
+    expect(await ui.find({ type: 'Text', text: 'MARKER' })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
+test('headless session does not run an automatic check', async ($, on) => {
+  const kit = fixture(on, { '/repo/package.json': JSON.stringify({ scripts: { test: 'node test.js' } }) })
+  await $.session.start({ cwd: ROOT, surface: null, isInteractive: false })
+  await editAndFinish($, kit.clock, '/repo/a.ts')
+  expect(kit.spawned).toHaveLength(0)
+  expect(kit.runs.some(run => run.argv[0] === 'git')).toBe(false)
 })

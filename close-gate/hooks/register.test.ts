@@ -10,7 +10,7 @@ function base(on: Parameters<typeof mock.clock>[0]) {
   on('tool.register', ($, e) => ({ value: { tool: `mcp__close-gate__${e.name}` } }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
-  on('ui.render', { component: 'AbovePrompt' }, () => ({ type: 'engine', ref: 0 }))
+  on('ui.render', { component: 'AbovePrompt' }, ($, e) => $.ui.resolve(e).Text({ children: 'MARKER' }))
   on('prompt.submit', ($, e) => ({ text: e.text, context: e.context }))
 }
 
@@ -33,13 +33,17 @@ function world(on: Parameters<typeof mock.clock>[0], status: string, items = '',
   return clock
 }
 
-test('all-clear band appears on terminal and desktop', async ($, on) => {
+test('all-clear band leaves only MARKER on terminal and desktop', async ($, on) => {
   const clock = world(on, '## main\n')
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   await clock.settle()
+  expect((await $.tool.call({ tool: 'mcp__close-gate__running_state' })).result).toContain('ready to close')
+  expect((await $.command.run({ command: 'closeok', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })).text).toContain('ready to close')
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'close-gate', surface, component: 'AbovePrompt', props: BAND })
-    expect(await ui.find({ type: 'Text', text: /close-gate: ready to close · 0s ago/ })).toBeDefined()
+    expect((await ui.drawn()).type).toBe('Text')
+    expect(await ui.find({ type: 'Text', text: 'MARKER' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /close-gate/ })).toBeUndefined()
     await ui.redraw({ ...BAND, hasSurvey: true })
     expect(await ui.find({ type: 'Text', text: /close-gate/ })).toBeUndefined()
     await ui.unmount()
@@ -53,6 +57,7 @@ test('band shows changed, unpushed and open items', async ($, on) => {
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'close-gate', surface, component: 'AbovePrompt', props: BAND })
     expect(await ui.find({ type: 'Text', text: /2 changed · 2 unpushed · open items 2/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'MARKER' })).toBeDefined()
     await ui.unmount()
   }
 })
@@ -68,7 +73,7 @@ test('band falls through before collection', async ($, on) => {
 
 test('running_state tool returns cached facts', async ($, on) => {
   const clock = world(on, '## main...origin/main [ahead 2]\n M a\n', '- [ ] one\n')
-  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: true })
   await clock.settle()
   const answer = await $.tool.call({ tool: 'mcp__close-gate__running_state' })
   expect(answer.result).toContain('1 changed, 2 unpushed')
@@ -77,7 +82,7 @@ test('running_state tool returns cached facts', async ($, on) => {
 
 test('close prompt gets facts and unrelated prompt stays unchanged', async ($, on) => {
   const clock = world(on, '## main\n')
-  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: true })
   await clock.settle()
   const close = await $.prompt.submit({ text: 'are we done?', wait: false, origin: { kind: 'composer' } })
   expect(close.text).toContain('\n\n[close-gate facts, 0s old]')
@@ -89,7 +94,7 @@ test('close prompt gets facts and unrelated prompt stays unchanged', async ($, o
 test('close prompt keeps all five fact lines', async ($, on) => {
   const claim = 'Working on the close check. '.repeat(9)
   const clock = world(on, '## main...origin/main [ahead 2, behind 1]\n M a\n', '- [ ] finish review\n', claim)
-  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: true })
   await clock.settle()
   const close = await $.prompt.submit({ text: 'are we done?', wait: false, origin: { kind: 'composer' } })
   const output = close.text ?? ''
@@ -104,7 +109,7 @@ test('close prompt keeps all five fact lines', async ($, on) => {
 
 test('close prompt caps long facts at a line boundary', async ($, on) => {
   const clock = world(on, '## main\n', '', 'C'.repeat(1300))
-  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: true })
   await clock.settle()
   const close = await $.prompt.submit({ text: 'are we done?', wait: false, origin: { kind: 'composer' } })
   const output = close.text ?? ''
@@ -112,6 +117,18 @@ test('close prompt caps long facts at a line boundary', async ($, on) => {
   expect(block.length <= 1200).toBe(true)
   expect(block.endsWith('Dev ports: none')).toBe(true)
   expect(block.includes('Claim:')).toBe(false)
+})
+
+test('headless session does not collect or rewrite a close prompt', async ($, on) => {
+  base(on)
+  const clock = mock.clock(on, { now: 40000 })
+  let runs = 0
+  on('process.run', () => { runs++; throw new Error('unexpected process') })
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await clock.advance(60000)
+  expect(runs).toBe(0)
+  const prompt = await $.prompt.submit({ text: 'are we done?', wait: false, origin: { kind: 'composer' } })
+  expect(prompt.text).toBe('are we done?')
 })
 
 test('parsers count git files, ports and open items', () => {

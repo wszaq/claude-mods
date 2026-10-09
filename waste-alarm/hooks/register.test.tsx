@@ -52,7 +52,7 @@ test('shows tips in the band and a pane on terminal and desktop', async ($, on) 
   on('tool.call', { tool: 'Bash' }, () => shellResult)
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
     const { Text } = $.ui.resolve(e)
-    return <Text>base</Text>
+    return <Text>MARKER</Text>
   })
 
   await $.session.start({ cwd: '/home/test', surface: 'terminal', isInteractive: true })
@@ -67,6 +67,7 @@ test('shows tips in the band and a pane on terminal and desktop', async ($, on) 
       scroll: { bodyRows: 3, offset: 0 }, view: {},
     } })
     if (!await band.find({ type: 'Text', text: '2 new tips' })) throw new Error(`band tips missing on ${surface}`)
+    expect(await band.find({ type: 'Text', text: 'MARKER' })).toBeDefined()
     const pane = await $.ui.mount({ plugin: 'waste-alarm', surface, component: 'Pane', requestId: 'waste-alarm', props: {
       title: 'waste-alarm', isFocused: true, bodyColumns: 80, placement: 'inline',
       scroll: { bodyRows: 20, offset: 0 }, view: {},
@@ -76,6 +77,8 @@ test('shows tips in the band and a pane on terminal and desktop', async ($, on) 
     if (surface === 'desktop') {
       await band.press({ key: 'dismiss' })
       expect(await band.find({ type: 'Text', text: 'new tips' })).toBeUndefined()
+      expect((await band.drawn()).type).toBe('Text')
+      expect(await band.find({ type: 'Text', text: 'MARKER' })).toBeDefined()
     }
     await band.unmount()
     await pane.unmount()
@@ -133,6 +136,43 @@ test('a second session reuses a recent scan but reads tips', async ($, on) => {
   await clock.advance(30000)
   expect(scans).toBe(1)
   expect(tipRuns).toBe(2)
+})
+
+test('empty band leaves only MARKER on terminal and desktop', async ($, on) => {
+  on('ui.render', { component: 'AbovePrompt' }, ($, e) => $.ui.resolve(e).Text({ children: 'MARKER' }))
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const band = await $.ui.mount({ plugin: 'waste-alarm', surface, component: 'AbovePrompt', props: {
+      hasSurvey: false, isWorking: false, maxRows: 3, bodyColumns: 80,
+      scroll: { bodyRows: 3, offset: 0 }, view: {},
+    } })
+    expect((await band.drawn()).type).toBe('Text')
+    expect(await band.find({ type: 'Text', text: 'MARKER' })).toBeDefined()
+    await band.unmount()
+  }
+})
+
+test('headless session counts Bash calls without scans, cleanup or toasts', async ($, on) => {
+  const clock = mock.clock(on, { now: new Date(2026, 9, 9, 12).getTime() })
+  const stored = new Map<string, unknown>()
+  on('store.get', ($, e) => ({ value: stored.get(e.key) }))
+  on('store.set', ($, e) => { stored.set(e.key, e.value); return { value: undefined } })
+  on('store.keys', () => ({ value: [...stored.keys()] }))
+  let runs = 0
+  let toasts = 0
+  let cleanup = 0
+  on('process.run', () => { runs++; return { value: processResult() } })
+  on('ui.toast', () => { toasts++; return { value: undefined } })
+  on('store.delete', () => { cleanup++; return { value: undefined } })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('tool.call', { tool: 'Bash' }, () => shellResult)
+  await $.session.start({ cwd: '/home/test', surface: null, isInteractive: false })
+  for (let i = 0; i < 11; i++) await $.tool.call({ tool: 'Bash', command: 'build --output app' })
+  await clock.advance(7200000)
+  expect(stored.get('counts:2026-10-09')).toEqual({ 'build --output app': 11 })
+  expect(runs).toBe(0)
+  expect(toasts).toBe(0)
+  expect(cleanup).toBe(0)
 })
 
 test('removes old count keys at session start', async ($, on) => {

@@ -148,7 +148,9 @@ async function schedule($: EngineInterface, files: string[]): Promise<void> {
 }
 
 export const register: Register = on => {
+  let interactive = true
   on('session.start', async ($, e, next) => {
+    interactive = e.isInteractive !== false
     cwd = e.cwd
     try {
       home = await $.env.get('HOME') ?? ''
@@ -176,7 +178,7 @@ export const register: Register = on => {
 
   on('turn.complete', async ($, e, next) => {
     try {
-      if (!e.agentId) {
+      if (interactive && !e.agentId) {
         const files = await read($, changed)
         if (files.length) {
           await update($, changed, () => [])
@@ -212,10 +214,11 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const last = await read($, view)
     if (e.props.hasSurvey || !last) return next(e)
-    const { Text } = $.ui.resolve(e)
+    const { Box, Text } = $.ui.resolve(e)
     const age = last.kind === 'pass' ? ` ${Math.floor(((await $.clock.now()) - last.at) / 1000)}s ago` : ''
     const flags = last.flags === undefined ? '' : ` — ${last.flags} ${last.flags === 1 ? 'flag' : 'flags'}`
     const label = last.kind === 'running' ? `verify-gate: running… ${last.name}` : last.kind === 'pass' ? `verify-gate: ✓ ${last.name}${age}${flags}` : `verify-gate: ✗ ${last.name} exit ${last.exitCode} — /verify log${flags}`
-    return <Text dimColor={last.kind === 'pass'}>{label}</Text>
+    const below = await next(e)
+    return <Box flexDirection="column"><Text dimColor={last.kind === 'pass'}>{label}</Text>{below}</Box>
   })
 }

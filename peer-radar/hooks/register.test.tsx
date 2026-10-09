@@ -113,3 +113,14 @@ test('stored time throttles collections across sessions', { options: { repos: '~
   await clock.advance(120000)
   expect(fetches).toBe(1)
 })
+
+test('headless session schedules no collector or remote work', async ($, on) => {
+  const clock = mock.clock(on, { now: 600000 })
+  let runs = 0
+  on('process.run', () => { runs++; throw new Error('unexpected process') })
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await clock.advance(120000)
+  expect(runs).toBe(0)
+})

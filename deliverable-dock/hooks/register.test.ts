@@ -118,3 +118,23 @@ test('pane shows rows and actions on terminal and desktop', async ($, on) => {
     await ui.unmount()
   }
 })
+
+test('headless session does not record Write or Bash deliverables', async ($, on) => {
+  const clock = mock.clock(on, { now: 200000 })
+  let runs = 0
+  let stats = 0
+  on('process.run', () => { runs++; throw new Error('unexpected process') })
+  on('fs.stat', () => { stats++; throw new Error('unexpected stat') })
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('tool.call', { tool: 'Write' }, ($, e) => ({ result: { type: 'create', filePath: e.file_path, content: e.content, structuredPatch: [], originalFile: null } }))
+  on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await $.tool.call({ tool: 'Write', file_path: '/work/a.pdf', content: '' })
+  await $.tool.call({ tool: 'Bash', command: 'build /work/b.pdf' })
+  await clock.settle()
+  const ui = await $.ui.mount({ plugin: 'deliverable-dock', surface: 'terminal', component: 'Pane', requestId: 'deliverable-dock', props: PANE })
+  expect(await ui.find({ text: 'No deliverables recorded in this session yet.' })).toBeDefined()
+  expect(runs).toBe(0)
+  expect(stats).toBe(0)
+})

@@ -90,6 +90,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'radar', description: 'Show peer sessions and sync health' })
     await $.command.register({ name: 'relay', description: 'Relay text to a local or peer session', argumentHint: '<short-id> <text>' })
+    if (e.isInteractive === false) return next(e)
     try {
       const os = await run($, ['uname', '-s'])
       runtime.platform = os.stdout.trim()

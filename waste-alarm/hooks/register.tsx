@@ -44,13 +44,16 @@ async function dismiss($: EngineInterface): Promise<void> {
 }
 
 export const register: Register = (on, options) => {
+  let interactive = true
   const threshold = Number(options.threshold ?? 10)
   const configuredRepo = String(options.tokenDashboard ?? '')
   let scanRunning = false
 
   on('session.start', async ($, e, next) => {
+    interactive = e.isInteractive !== false
     try {
       await $.command.register({ name: 'waste', description: 'Show repeated commands and token tips', argumentHint: '[ignore <command>|dismiss]' })
+      if (!interactive) return next(e)
       const cutoff = new Date(await $.clock.now())
       cutoff.setDate(cutoff.getDate() - 7)
       const oldest = day(cutoff.getTime())
@@ -107,7 +110,7 @@ export const register: Register = (on, options) => {
         const count = (counts[command] ?? 0) + 1
         counts[command] = count
         await $.store.set(key, counts)
-        if (count >= threshold) {
+        if (interactive && count >= threshold) {
           const shownKey = `shown:${today}`
           const shown = (await $.store.get(shownKey) as string[] | undefined) ?? []
           if (!shown.includes(command)) {
@@ -144,7 +147,9 @@ export const register: Register = (on, options) => {
     const current = await read($, tips)
     if (e.props.hasSurvey || current.length === 0) return next(e)
     const { Box, Text, Button } = $.ui.resolve(e)
-    return <Box><Text dimColor>waste-alarm: {current.length} new tips — /waste </Text><Button key="dismiss" label="Dismiss" onPress={() => dismiss($)} /></Box>
+    const below = await next(e)
+    const mine = <Box><Text dimColor>waste-alarm: {current.length} new tips — /waste </Text><Button key="dismiss" label="Dismiss" onPress={() => dismiss($)} /></Box>
+    return <Box flexDirection="column">{mine}{below}</Box>
   })
 
   on('ui.render', { component: 'Pane', requestId: pane }, async ($, e) => {

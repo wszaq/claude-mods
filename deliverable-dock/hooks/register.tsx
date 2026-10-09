@@ -63,20 +63,23 @@ export const register: Register = (on, options) => {
   let opener = 'open'
   let pending: string[] = []
   let flushScheduled = false
+  let interactive = true
 
   on('session.start', async ($, e, next) => {
+    interactive = e.isInteractive !== false
     cwd = e.cwd
+    await $.command.register({ name: 'ship', description: 'Copy a deliverable to Downloads and open it' })
+    if (!interactive) return next(e)
     home = (await $.env.get('HOME')) ?? ''
     const platform = await $.process.run(['uname', '-s'])
     opener = platform.stdout.trim() === 'Linux' ? 'xdg-open' : 'open'
-    await $.command.register({ name: 'ship', description: 'Copy a deliverable to Downloads and open it' })
     return next(e)
   })
 
   on('tool.call', { tool: 'Write' }, async ($, e, next) => {
     const result = await next(e)
     try {
-      if (result.deny === undefined && result.isError !== true) {
+      if (interactive && result.deny === undefined && result.isError !== true) {
         const path = absolute(e.file_path, cwd, home)
         if (extensions.has(path.slice(path.lastIndexOf('.')).toLowerCase())) await record($, path)
       }
@@ -86,7 +89,7 @@ export const register: Register = (on, options) => {
 
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const result = await next(e)
-    if (result.deny === undefined && result.isError !== true && !result.result.interrupted && !result.result.backgroundTaskId) {
+    if (interactive && result.deny === undefined && result.isError !== true && !result.result.interrupted && !result.result.backgroundTaskId) {
       pending.push(...commandPaths(e.command, extensions).map(path => absolute(path, cwd, home)))
       if (pending.length > 0 && !flushScheduled) {
         flushScheduled = true

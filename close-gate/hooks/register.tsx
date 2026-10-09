@@ -61,7 +61,9 @@ function bandText(f: Facts, now: number) {
 
 function factText(f: Facts | null, now: number) {
   if (!f) return 'close-gate: no facts yet'
+  const clear = !f.changed && !f.ahead && !f.behind && !f.worktrees && !f.ports.length && !f.openItems
   return [
+    ...(clear ? ['close-gate: ready to close'] : []),
     `Git: ${f.git ? `${f.changed} changed, ${f.ahead} unpushed, ${f.behind} behind, ${f.worktrees} extra worktrees` : 'not a git repo'}`,
     `Dev ports: ${f.ports.join(', ') || 'none'}`,
     `Claim: ${f.claim || 'none'}`,
@@ -71,13 +73,16 @@ function factText(f: Facts | null, now: number) {
 }
 
 export const register: Register = on => {
+  let interactive = true
   on('session.start', async ($, e, next) => {
+    interactive = e.isInteractive !== false
     await $.tool.register({
       name: 'running_state',
       description: 'Running state of this session for a handoff or a close check: uncommitted and unpushed git changes, worktrees, listening dev ports, the session claim and open items. Call this instead of running git, ps or lsof by hand.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     })
     await $.command.register({ name: 'closeok', description: 'Show the cached close check.' })
+    if (!interactive) return next(e)
 
     let linux: boolean | null = null
     const collect = async () => {
@@ -130,7 +135,10 @@ export const register: Register = on => {
       if (!f || e.props.hasSurvey || await read($, hidden)) return next(e)
       const { Box, Text, Button } = $.ui.resolve(e)
       const clear = !f.changed && !f.ahead && !f.behind && !f.worktrees && !f.ports.length && !f.openItems
-      return <Box><Text dimColor={clear}>{bandText(f, await $.clock.now())}{' '}</Text><Button key="hide" label="Hide" onPress={() => update($, hidden, () => true)} /></Box>
+      const below = await next(e)
+      if (clear) return below
+      const mine = <Box><Text>{bandText(f, await $.clock.now())}{' '}</Text><Button key="hide" label="Hide" onPress={() => update($, hidden, () => true)} /></Box>
+      return <Box flexDirection="column">{mine}{below}</Box>
     } catch { return next(e) }
   })
 
@@ -140,6 +148,7 @@ export const register: Register = on => {
   })
 
   on('skill.prompt', { skill: 'session-handoff' }, async ($, e, next) => {
+    if (!interactive) return next(e)
     try {
       const result = await next(e)
       return { text: `${result.text}\n${HINT}` }
@@ -147,6 +156,7 @@ export const register: Register = on => {
   })
 
   on('prompt.submit', async ($, e, next) => {
+    if (!interactive) return next(e)
     try {
       if (!CLOSE.test(e.text)) return next(e)
       const f = await read($, facts)
