@@ -144,12 +144,23 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const current = await read($, tips)
-    if (e.props.hasSurvey || current.length === 0) return next(e)
-    const { Box, Text, Button } = $.ui.resolve(e)
-    const below = await next(e)
-    const mine = <Box><Text dimColor>waste-alarm: {current.length} new tips — /waste </Text><Button key="dismiss" label="Dismiss" onPress={() => dismiss($)} /></Box>
-    return <Box flexDirection="column">{mine}{below}</Box>
+    try {
+      const current = await read($, tips)
+      if (e.props.hasSurvey || current.length === 0) return next(e)
+      const { Box, Text, Button } = $.ui.resolve(e)
+      const below = await next(e)
+      const mine = <Box><Text dimColor>waste-alarm: {current.length} new tips </Text><Button key="tips" label="tips" hotkey="w" plain onPress={() => $.ui.open({ id: pane, title: 'waste-alarm' })} /><Button key="dismiss" label="Dismiss" hotkey="d" plain onPress={() => dismiss($)} /></Box>
+      return <Box flexDirection="column">{mine}{below}</Box>
+    } catch { return next(e) }
+  })
+
+  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+    try {
+      const current = await read($, tips)
+      if (current.length === 0) return next(e)
+      const modes = Array.isArray(e.props.modes) ? e.props.modes : []
+      return next({ ...e, props: { ...e.props, modes: [...modes, `${current.length} waste tips · /waste`] } })
+    } catch { return next(e) }
   })
 
   on('ui.render', { component: 'Pane', requestId: pane }, async ($, e) => {

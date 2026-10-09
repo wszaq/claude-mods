@@ -4,6 +4,7 @@ import type { Deliverable } from '../types'
 
 const PANE = 'deliverable-dock'
 const files = atom({ plugin: 'deliverable-dock', key: 'files' } as const, [] as Deliverable[])
+const band = atom({ plugin: 'deliverable-dock', key: 'band' } as const, null as string | null)
 
 function pathParts(path: string) {
   const end = path.lastIndexOf('/')
@@ -29,6 +30,7 @@ function commandPaths(command: string, extensions: Set<string>) {
 async function record($: EngineInterface, path: string) {
   const recordedAt = await $.clock.now()
   await update($, files, list => [{ path, recordedAt }, ...list.filter(one => one.path !== path)].slice(0, 30))
+  await update($, band, () => path)
 }
 
 async function open($: EngineInterface, opener: string, path: string) {
@@ -51,6 +53,7 @@ async function ship($: EngineInterface, home: string, opener: string, item: Deli
   const copied = await $.process.run(['cp', '-n', item.path, target])
   if (copied.exitCode !== 0) throw new Error('Could not copy deliverable')
   await open($, opener, target)
+  await update($, band, current => current === item.path ? null : current)
   const message = `Shipped ${pathParts(target).name} to Downloads`
   $.ui.toast(message)
   return message
@@ -128,6 +131,28 @@ export const register: Register = (on, options) => {
     if (!Number.isInteger(index) || index < 0 || index >= list.length) return { text: 'No deliverable at that number.' }
     try { return { text: await ship($, home, opener, list[index]!) } }
     catch { return { text: 'Could not ship the deliverable.' } }
+  })
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    try {
+      const path = await read($, band)
+      if (!path || e.props.hasSurvey) return next(e)
+      const { Box, Text, Button } = $.ui.resolve(e)
+      const below = await next(e)
+      const item = (await read($, files)).find(one => one.path === path)
+      if (!item) return below
+      const mine = <Box><Text>📦 {pathParts(path).name} </Text><Button key="ship" label="ship" hotkey="s" plain onPress={() => ship($, home, opener, item)} /><Button key="open" label="open" hotkey="o" plain onPress={() => open($, opener, path)} /><Button key="dismiss" label="dismiss" hotkey="n" plain onPress={() => update($, band, current => current === path ? null : current)} /></Box>
+      return <Box flexDirection="column">{mine}{below}</Box>
+    } catch { return next(e) }
+  })
+
+  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+    try {
+      const path = await read($, band)
+      if (!path) return next(e)
+      const modes = Array.isArray(e.props.modes) ? e.props.modes : []
+      return next({ ...e, props: { ...e.props, modes: [...modes, `deliverable ${pathParts(path).name} · /ship`] } })
+    } catch { return next(e) }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {

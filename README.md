@@ -4,11 +4,20 @@ Custom Claude Code mods (function-hook plugins) for the Mac and the ThinkPad. Th
 
 | Mod | What it does |
 |---|---|
-| `close-gate` | A band shows if the session is ready to close. The `running_state` tool gives the handoff the same facts in one call. |
-| `waste-alarm` | A toast when one Bash command repeats too often in a day. `token-dashboard` tips show in the session. |
-| `verify-gate` | Runs the repo's checks after a turn that edited files and shows pass or fail. |
+| `close-gate` | A band shows close facts and has a Hide button. The `running_state` tool gives the handoff the same facts in one call. |
+| `waste-alarm` | A toast when one Bash command repeats too often in a day. A band opens new `token-dashboard` tips. |
+| `verify-gate` | Runs the repo's checks after edits. A failed check has log and rerun buttons. |
 | `peer-radar` | The live sessions, claims and sync state of both machines on one board. `/relay` sends a message to a session on either machine. |
-| `deliverable-dock` | `/ship` copies the session's latest deliverable to Downloads and opens it. |
+| `deliverable-dock` | A band can ship, open, or dismiss the latest deliverable. `/ship` copies it to Downloads and opens it. |
+
+## Band buttons
+
+| Mod | Button | Hotkey | Footer label in Desktop |
+|---|---|---|---|
+| `verify-gate` | log, rerun | `l`, `r` | `verify ✗ <name> · /verify log` on failure |
+| `waste-alarm` | tips, Dismiss | `w`, `d` | `<n> waste tips · /waste` |
+| `close-gate` | Hide | `x` | none |
+| `deliverable-dock` | ship, open, dismiss | `s`, `o`, `n` | `deliverable <name> · /ship` |
 
 ## Install (each machine, once)
 

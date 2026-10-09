@@ -7,6 +7,7 @@ const changed = atom({ plugin: 'verify-gate', key: 'changed' } as const, [] as s
 const enabled = atom({ plugin: 'verify-gate', key: 'enabled' } as const, true)
 const view = atom({ plugin: 'verify-gate', key: 'view' } as const, null as CheckView | null)
 const lastFailure = atom({ plugin: 'verify-gate', key: 'lastFailure' } as const, null as string | null)
+const logPane = 'verify-gate-log'
 
 type Check = { argv: string[]; cwd: string; name: string; timeoutMs: number }
 
@@ -147,6 +148,15 @@ async function schedule($: EngineInterface, files: string[]): Promise<void> {
   for (const [dir, paths] of advisories) void run($, dir, paths, false, true)
 }
 
+async function runManual($: EngineInterface): Promise<string> {
+  if (!(await read($, enabled))) return 'verify-gate: off'
+  $.clock.after(0, () => { void (async () => {
+    const root = await rootOf($, `${cwd}/.`)
+    if (root) await run($, root, [cwd], true)
+  })() })
+  return 'verify-gate: scheduled'
+}
+
 export const register: Register = on => {
   let interactive = true
   on('session.start', async ($, e, next) => {
@@ -203,22 +213,37 @@ export const register: Register = on => {
       return { text: last?.output.split('\n').slice(-60).join('\n') || 'verify-gate: no output' }
     }
     if (arg) return { text: 'Usage: /verify [on|off|log]' }
-    if (!(await read($, enabled))) return { text: 'verify-gate: off' }
-    $.clock.after(0, () => { void (async () => {
-      const root = await rootOf($, `${cwd}/.`)
-      if (root) await run($, root, [cwd], true)
-    })() })
-    return { text: 'verify-gate: scheduled' }
+    return { text: await runManual($) }
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const last = await read($, view)
-    if (e.props.hasSurvey || !last) return next(e)
-    const { Box, Text } = $.ui.resolve(e)
-    const age = last.kind === 'pass' ? ` ${Math.floor(((await $.clock.now()) - last.at) / 1000)}s ago` : ''
-    const flags = last.flags === undefined ? '' : ` — ${last.flags} ${last.flags === 1 ? 'flag' : 'flags'}`
-    const label = last.kind === 'running' ? `verify-gate: running… ${last.name}` : last.kind === 'pass' ? `verify-gate: ✓ ${last.name}${age}${flags}` : `verify-gate: ✗ ${last.name} exit ${last.exitCode} — /verify log${flags}`
-    const below = await next(e)
-    return <Box flexDirection="column"><Text dimColor={last.kind === 'pass'}>{label}</Text>{below}</Box>
+    try {
+      const last = await read($, view)
+      if (e.props.hasSurvey || !last) return next(e)
+      const { Box, Text, Button } = $.ui.resolve(e)
+      const age = last.kind === 'pass' ? ` ${Math.floor(((await $.clock.now()) - last.at) / 1000)}s ago` : ''
+      const flags = last.flags === undefined ? '' : ` — ${last.flags} ${last.flags === 1 ? 'flag' : 'flags'}`
+      const label = last.kind === 'running' ? `verify-gate: running… ${last.name}` : last.kind === 'pass' ? `verify-gate: ✓ ${last.name}${age}${flags}` : `verify-gate: ✗ ${last.name} exit ${last.exitCode}${flags}`
+      const below = await next(e)
+      const mine = <Box><Text dimColor={last.kind === 'pass'}>{label}</Text>{last.kind === 'fail' && <><Button key="log" label="log" hotkey="l" plain onPress={() => $.ui.open({ id: logPane, title: 'verify-gate log' })} /><Button key="rerun" label="rerun" hotkey="r" plain onPress={() => runManual($)} /></>}</Box>
+      return <Box flexDirection="column">{mine}{below}</Box>
+    } catch { return next(e) }
+  })
+
+  on('ui.render', { component: 'Pane', requestId: logPane }, async ($, e, next) => {
+    try {
+      const { Text } = $.ui.resolve(e)
+      const last = await read($, view)
+      return <Text>{last?.output.split('\n').slice(-60).join('\n') || 'verify-gate: no output'}</Text>
+    } catch { return next(e) }
+  })
+
+  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+    try {
+      const last = await read($, view)
+      if (last?.kind !== 'fail') return next(e)
+      const modes = Array.isArray(e.props.modes) ? e.props.modes : []
+      return next({ ...e, props: { ...e.props, modes: [...modes, `verify ✗ ${last.name} · /verify log`] } })
+    } catch { return next(e) }
   })
 }

@@ -46,7 +46,8 @@ test('shows tips in the band and a pane on terminal and desktop', async ($, on) 
   mock.env(on, { HOME: '/home/test' })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
-  on('ui.open', () => ({ value: { isPlaced: true } }))
+  const opened: string[] = []
+  on('ui.open', ($, e) => { opened.push(e.id); return { value: { isPlaced: true } } })
   on('fs.exists', () => ({ value: true }))
   on('process.run', ($, e) => ({ value: processResult(e.argv[0] === 'uname' ? 'Linux\n' : e.argv.includes('tips') ? sample : '') }))
   on('tool.call', { tool: 'Bash' }, () => shellResult)
@@ -68,6 +69,10 @@ test('shows tips in the band and a pane on terminal and desktop', async ($, on) 
     } })
     if (!await band.find({ type: 'Text', text: '2 new tips' })) throw new Error(`band tips missing on ${surface}`)
     expect(await band.find({ type: 'Text', text: 'MARKER' })).toBeDefined()
+    expect(await band.find({ type: 'Button', text: 'tips' })).toBeDefined()
+    expect(JSON.stringify(await band.drawn())).toContain('"hotkey":"w"')
+    expect(JSON.stringify(await band.drawn())).toContain('"hotkey":"d"')
+    await band.press({ key: 'tips' })
     const pane = await $.ui.mount({ plugin: 'waste-alarm', surface, component: 'Pane', requestId: 'waste-alarm', props: {
       title: 'waste-alarm', isFocused: true, bodyColumns: 80, placement: 'inline',
       scroll: { bodyRows: 20, offset: 0 }, view: {},
@@ -83,6 +88,28 @@ test('shows tips in the band and a pane on terminal and desktop', async ($, on) 
     await band.unmount()
     await pane.unmount()
   }
+  expect(opened).toEqual(['waste-alarm', 'waste-alarm', 'waste-alarm'])
+})
+
+test('footer adds waste tips to earlier modes only while tips exist', async ($, on) => {
+  const clock = mock.clock(on, { now: new Date(2026, 9, 9, 12).getTime() })
+  mock.store(on)
+  mock.env(on, { HOME: '/home/test' })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('fs.exists', () => ({ value: true }))
+  on('process.run', ($, e) => ({ value: processResult(e.argv[0] === 'uname' ? 'Linux\n' : e.argv.includes('tips') ? sample : '') }))
+  let modes: string[] = []
+  on('ui.render', { component: 'SessionMode' }, ($, e) => { modes = e.props.modes; return $.ui.resolve(e).Text({ children: 'base' }) })
+  await $.ui.mount({ plugin: 'waste-alarm', surface: 'desktop', component: 'SessionMode', props: { modes: ['earlier'] } as any })
+  expect(modes).toEqual(['earlier'])
+  await $.session.start({ cwd: '/home/test', surface: 'terminal', isInteractive: true })
+  await clock.advance(30000)
+  await $.ui.mount({ plugin: 'waste-alarm', surface: 'desktop', component: 'SessionMode', props: { modes: ['earlier'] } as any })
+  expect(modes).toEqual(['earlier', '2 waste tips · /waste'])
+  await $.command.run({ command: 'waste', args: 'dismiss', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
+  await $.ui.mount({ plugin: 'waste-alarm', surface: 'desktop', component: 'SessionMode', props: { modes: ['earlier'] } as any })
+  expect(modes).toEqual(['earlier'])
 })
 
 test('dismissal survives a changed count in the tip title', async ($, on) => {

@@ -62,6 +62,17 @@ test('band shows changed, unpushed and open items', async ($, on) => {
   }
 })
 
+test('Hide has hotkey x and removes only the close band', async ($, on) => {
+  const clock = world(on, '## main\n M a\n')
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const ui = await $.ui.mount({ plugin: 'close-gate', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  expect(JSON.stringify(await ui.drawn())).toContain('"hotkey":"x"')
+  await ui.press({ key: 'hide' })
+  expect(await ui.find({ type: 'Text', text: /close-gate/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'MARKER' })).toBeDefined()
+})
+
 test('band falls through before collection', async ($, on) => {
   base(on)
   for (const surface of ['terminal', 'desktop'] as const) {
