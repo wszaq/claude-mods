@@ -141,7 +141,7 @@ export const register: Register = (on, options) => {
       const below = await next(e)
       const item = (await read($, files)).find(one => one.path === path)
       if (!item) return below
-      const mine = <Box columnGap={2}><Text>📦 {pathParts(path).name} </Text><Button key="ship" label="ship" hotkey="s" plain onPress={() => ship($, home, opener, item)} /><Button key="open" label="open" hotkey="o" plain onPress={() => open($, opener, path)} /><Button key="dismiss" label="dismiss" hotkey="n" plain onPress={() => update($, band, current => current === path ? null : current)} /></Box>
+      const mine = <Box columnGap={2}><Text>📦 {pathParts(path).name} </Text><Box flexShrink={0} columnGap={2}><Button key="ship" label="ship" hotkey="s" plain onPress={() => ship($, home, opener, item)} /><Button key="open" label="open" hotkey="o" plain onPress={() => open($, opener, path)} /><Button key="dismiss" label="dismiss" hotkey="n" plain onPress={() => update($, band, current => current === path ? null : current)} /></Box></Box>
       return <Box flexDirection="column">{mine}{below}</Box>
     } catch { return next(e) }
   })

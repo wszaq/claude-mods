@@ -149,7 +149,7 @@ export const register: Register = (on, options) => {
       if (e.props.hasSurvey || current.length === 0) return next(e)
       const { Box, Text, Button } = $.ui.resolve(e)
       const below = await next(e)
-      const mine = <Box columnGap={2}><Text dimColor>waste-alarm: {current.length} new tips </Text><Button key="tips" label="tips" hotkey="w" plain onPress={() => $.ui.open({ id: pane, title: 'waste-alarm' })} /><Button key="dismiss" label="Dismiss" hotkey="d" plain onPress={() => dismiss($)} /></Box>
+      const mine = <Box columnGap={2}><Text dimColor>waste-alarm: {current.length} new tips </Text><Box flexShrink={0} columnGap={2}><Button key="tips" label="tips" hotkey="w" plain onPress={() => $.ui.open({ id: pane, title: 'waste-alarm' })} /><Button key="dismiss" label="Dismiss" hotkey="d" plain onPress={() => dismiss($)} /></Box></Box>
       return <Box flexDirection="column">{mine}{below}</Box>
     } catch { return next(e) }
   })

@@ -225,7 +225,7 @@ export const register: Register = on => {
       const flags = last.flags === undefined ? '' : ` — ${last.flags} ${last.flags === 1 ? 'flag' : 'flags'}`
       const label = last.kind === 'running' ? `verify-gate: running… ${last.name}` : last.kind === 'pass' ? `verify-gate: ✓ ${last.name}${age}${flags}` : `verify-gate: ✗ ${last.name} exit ${last.exitCode}${flags}`
       const below = await next(e)
-      const mine = <Box columnGap={2}><Text dimColor={last.kind === 'pass'}>{label}</Text>{last.kind === 'fail' && <><Button key="log" label="log" hotkey="l" plain onPress={() => $.ui.open({ id: logPane, title: 'verify-gate log' })} /><Button key="rerun" label="rerun" hotkey="r" plain onPress={() => runManual($)} /></>}</Box>
+      const mine = <Box columnGap={2}><Text dimColor={last.kind === 'pass'}>{label}</Text>{last.kind === 'fail' && <Box flexShrink={0} columnGap={2}><Button key="log" label="log" hotkey="l" plain onPress={() => $.ui.open({ id: logPane, title: 'verify-gate log' })} /><Button key="rerun" label="rerun" hotkey="r" plain onPress={() => runManual($)} /></Box>}</Box>
       return <Box flexDirection="column">{mine}{below}</Box>
     } catch { return next(e) }
   })
