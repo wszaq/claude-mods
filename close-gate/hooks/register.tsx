@@ -137,7 +137,7 @@ export const register: Register = on => {
       const clear = !f.changed && !f.ahead && !f.behind && !f.worktrees && !f.ports.length && !f.openItems
       const below = await next(e)
       if (clear) return below
-      const mine = <Box><Text>{bandText(f, await $.clock.now())}{' '}</Text><Button key="hide" label="Hide" hotkey="x" plain onPress={() => update($, hidden, () => true)} /></Box>
+      const mine = <Box columnGap={2}><Text>{bandText(f, await $.clock.now())}{' '}</Text><Button key="hide" label="Hide" hotkey="x" plain onPress={() => update($, hidden, () => true)} /></Box>
       return <Box flexDirection="column">{mine}{below}</Box>
     } catch { return next(e) }
   })
