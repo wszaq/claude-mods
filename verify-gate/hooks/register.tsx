@@ -103,8 +103,10 @@ async function run($: EngineInterface, root: string, files: string[], manual = f
       const lines = output.trimEnd().split('\n').slice(-15).join('\n')
       const signature = JSON.stringify([check.argv.join(' '), exitCode, lines])
       if (signature !== await read($, lastFailure)) {
-        const note = await $.session.append({ message: { type: 'user', content: [{ type: 'text', text: `verify-gate: ${check.argv.join(' ')} failed (exit ${exitCode}) after the last edits. Last lines:\n${lines}` }] } })
-        if (note.deny === undefined) await update($, lastFailure, () => signature)
+        try {
+          const note = await $.session.append({ message: { type: 'user', content: [{ type: 'text', text: `verify-gate: ${check.argv.join(' ')} failed (exit ${exitCode}) after the last edits. Last lines:\n${lines}` }] } })
+          if (note.deny === undefined) await update($, lastFailure, () => signature)
+        } catch { /* Engines before 2.1.293 have no session.append: the band still shows the failure. */ }
       }
     }
   }

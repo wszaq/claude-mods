@@ -7,7 +7,10 @@ const BAND = { hasSurvey: false, isWorking: false, maxRows: 4, bodyColumns: 80, 
 
 function fixture(on: On, files: Record<string, string>, exitCode = 0, delay = false, gitRoot: string | null = ROOT) {
   const clock = mock.clock(on, { now: 100000 })
-  const session = mock.session(on)
+  // A test-side hook instead of mock.session, which the 2.1.292 kit lacks.
+  const rows: any[] = []
+  on('session.append', ($, e, next) => { rows.push(e); return next(e) })
+  const session = { appended: () => rows }
   const spawned: string[][] = []
   const runs: { argv: string[]; cwd?: string }[] = []
   let code = exitCode
