@@ -83,3 +83,16 @@ Use [SECURITY](https://github.com/wszaq/claude-mods/blob/main/SECURITY.md) for a
 
 Canonical source: [docs/troubleshooting.md](https://github.com/wszaq/claude-mods/blob/main/docs/troubleshooting.md).
 Maintain the repository document first. Copy its updates to this wiki page before publication.
+
+## Pull fails after the public release history cleanup
+
+The first public release removed personal network defaults from old commits.
+An older clone can have a different history, so `git pull --ff-only` can fail.
+Keep that clone and any local edits. Clone the public repository into a new folder:
+
+```bash
+git clone https://github.com/wszaq/claude-mods.git claude-mods-public
+```
+
+Use the new folder for the marketplace. Copy your own uncommitted changes only after you review them.
+Do not merge the old history into the public branch.

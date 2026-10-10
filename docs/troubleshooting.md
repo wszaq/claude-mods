@@ -78,3 +78,16 @@ A Linux desktop needs `xdg-open` and an application for the file type.
 Follow [CONTRIBUTING](../CONTRIBUTING.md).
 Remove private paths, command arguments, logs, and session content from a public report.
 Use [SECURITY](../SECURITY.md) for a security issue.
+
+## Pull fails after the public release history cleanup
+
+The first public release removed personal network defaults from old commits.
+An older clone can have a different history, so `git pull --ff-only` can fail.
+Keep that clone and any local edits. Clone the public repository into a new folder:
+
+```bash
+git clone https://github.com/wszaq/claude-mods.git claude-mods-public
+```
+
+Use the new folder for the marketplace. Copy your own uncommitted changes only after you review them.
+Do not merge the old history into the public branch.
