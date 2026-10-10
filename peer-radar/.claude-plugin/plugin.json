@@ -1,10 +1,23 @@
 {
   "name": "peer-radar",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Show local and peer Claude Code sessions and sync health.",
   "types": "./types/index.d.ts",
   "userConfig": {
-    "peerHost": { "type": "string", "title": "Peer host", "default": "", "description": "SSH host for the peer, or off" },
-    "repos": { "type": "string", "title": "Repositories", "default": "", "description": "Comma-separated repository paths" }
+    "peerHost": {
+      "type": "string",
+      "title": "Peer host",
+      "default": "",
+      "description": "SSH host for the peer, or off"
+    },
+    "repos": {
+      "type": "string",
+      "title": "Repositories",
+      "default": "",
+      "description": "Comma-separated repository paths"
+    }
+  },
+  "author": {
+    "name": "wszaq"
   }
 }

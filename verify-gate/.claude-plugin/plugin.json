@@ -2,5 +2,8 @@
   "name": "verify-gate",
   "version": "0.1.4",
   "description": "Run the repo check after edits and show its result.",
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "wszaq"
+  }
 }

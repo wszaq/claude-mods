@@ -16,5 +16,8 @@
       "default": "",
       "description": "Token Dashboard repository; empty means auto-detect"
     }
+  },
+  "author": {
+    "name": "wszaq"
   }
 }

@@ -39,9 +39,9 @@ test('relay target selects cached boards and unknown ids', () => {
 
 test('status covers healthy, offline, behind, and vault blocked', () => {
   const radar = sample()
-  expect(statusText(radar)).toBe('radar: mac 2 · thinkpad 2 · sync ok')
+  expect(statusText(radar)).toBe('radar: macOS 2 · peer 2 · sync ok')
   radar.peer.error = 'offline'
-  expect(statusText(radar)).toMatch('thinkpad offline')
+  expect(statusText(radar)).toMatch('peer offline')
   radar.repos[0]!.behind = 2
   expect(statusText(radar)).toMatch('sync: _WAJBKODING behind 2')
   radar.vault = { result: 'success', active: 'today', blocked: true, at: 1000 }
@@ -58,7 +58,7 @@ test('pane renders on terminal and desktop', async ($, on) => {
   }
 })
 
-test('relay command sends to local or peer and lists unknown ids', async ($, on) => {
+test('relay command sends to local or peer and lists unknown ids', { options: { peerHost: 'peer.example' } }, async ($, on) => {
   const clock = mock.clock(on, { now: 600000 })
   mock.store(on)
   mock.env(on, { HOME: '/Users/test' })
@@ -123,4 +123,25 @@ test('headless session schedules no collector or remote work', async ($, on) => 
   await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
   await clock.advance(120000)
   expect(runs).toBe(0)
+})
+
+
+test('default configuration does not contact a peer or fetch personal repositories', async ($, on) => {
+  const clock = mock.clock(on, { now: 600000 })
+  mock.store(on)
+  mock.env(on, { HOME: '/Users/test' })
+  const calls: string[][] = []
+  on('process.run', ($, e) => {
+    calls.push([...e.argv])
+    const stdout = e.argv[0] === 'uname' ? 'Darwin\n' : e.argv.includes('--list') ? table : ''
+    return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('fs.exists', () => ({ value: true }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  await clock.advance(5000)
+  expect(calls.some(argv => argv[0] === 'ssh')).toBe(false)
+  expect(calls.some(argv => argv.includes('fetch'))).toBe(false)
 })

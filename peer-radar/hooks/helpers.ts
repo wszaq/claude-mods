@@ -27,8 +27,8 @@ export function quote(text: string): string {
 }
 
 export function statusText(radar: Radar): string {
-  const local = radar.platform === 'Darwin' ? 'mac' : 'thinkpad'
-  const peer = radar.platform === 'Darwin' ? 'thinkpad' : 'mac'
+  const local = radar.platform === 'Darwin' ? 'macOS' : 'Linux'
+  const peer = 'peer'
   const prefix = `radar: ${local} ${radar.local.sessions.length} · ${peer} ${radar.peer.error ? 'offline' : radar.peer.sessions.length}`
   if (radar.vault?.blocked) return `${prefix} · vault BLOCKED`
   const behind = radar.repos.find(repo => repo.behind > 0)

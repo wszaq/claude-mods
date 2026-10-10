@@ -1,0 +1,7 @@
+- [Home](Home)
+- [Installation](Installation)
+- [Usage](Usage)
+- [Mod Reference](Mod-Reference)
+- [Architecture](Architecture)
+- [Troubleshooting](Troubleshooting)
+- [Repository](https://github.com/wszaq/claude-mods)

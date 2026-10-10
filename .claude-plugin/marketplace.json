@@ -5,7 +5,7 @@
     { "name": "close-gate", "source": "./close-gate", "description": "Band and one-call tool that show whether a session is ready to close" },
     { "name": "waste-alarm", "source": "./waste-alarm", "description": "Toast on repeated commands and token-dashboard waste tips in the session" },
     { "name": "verify-gate", "source": "./verify-gate", "description": "Runs the repo's checks after each edit and shows pass or fail" },
-    { "name": "peer-radar", "source": "./peer-radar", "description": "Sessions, claims and sync state of the Mac and the ThinkPad on one board" },
+    { "name": "peer-radar", "source": "./peer-radar", "description": "Local and configured SSH peer sessions, claims and repository sync state" },
     { "name": "deliverable-dock", "source": "./deliverable-dock", "description": "/ship copies the session's finished file to Downloads and opens it" }
   ]
 }

@@ -10,5 +10,8 @@
       "default": ".pdf,.pptx,.docx,.xlsx,.html,.png,.jpg,.mp4,.mov,.zip",
       "description": "Comma-separated deliverable file extensions"
     }
+  },
+  "author": {
+    "name": "wszaq"
   }
 }

@@ -1,61 +1,69 @@
 # claude-mods
 
-Custom Claude Code mods (function-hook plugins) for the Mac and the ThinkPad. The spec and the evidence for each mod: `docs/Projects/claude-workflow-mods/2026-10-09-work-profile-and-top5-mods.md` in `_WAJBKODING`.
+Five Claude Code function-hook plugins for local development on macOS and Linux.
+A mod observes session events and adds commands, status text, or a user interface.
 
-| Mod | What it does |
-|---|---|
-| `close-gate` | A band shows close facts and has a Hide button. The `running_state` tool gives the handoff the same facts in one call. |
-| `waste-alarm` | A toast when one Bash command repeats too often in a day. A band opens new `token-dashboard` tips. |
-| `verify-gate` | Runs the repo's checks after edits. A failed check has log and rerun buttons. |
-| `peer-radar` | The live sessions, claims and sync state of both machines on one board. `/relay` sends a message to a session on either machine. |
-| `deliverable-dock` | A band can ship, open, or dismiss the latest deliverable. `/ship` copies it to Downloads and opens it. |
+| Mod | Purpose | Command |
+| --- | --- | --- |
+| close-gate | Show Git changes, development ports, and optional session claims | `/closeok` |
+| waste-alarm | Count repeated shell commands and show optional Token Dashboard tips | `/waste` |
+| verify-gate | Run repository checks after a turn that edits files | `/verify` |
+| peer-radar | Show optional local and SSH peer session boards and repository sync state | `/radar`, `/relay` |
+| deliverable-dock | Record output files and copy a selected file to Downloads | `/ship` |
 
-## Band buttons
+## Start
 
-| Mod | Button | Hotkey | Footer label in Desktop |
-|---|---|---|---|
-| `verify-gate` | log, rerun | `l`, `r` | `verify ✗ <name> · /verify log` on failure |
-| `waste-alarm` | tips, Dismiss | `w`, `d` | `<n> waste tips · /waste` |
-| `close-gate` | Hide | `x` | none |
-| `deliverable-dock` | ship, open, dismiss | `s`, `o`, `n` | `deliverable <name> · /ship` |
-
-## Install (each machine, once)
-
-`~/.claude/settings.json` syncs between the Mac and the ThinkPad, so the marketplace must use a path that is the same on both: `~/.claude/claude-mods`. That path is a symlink, local to each machine (`~/.claude/.gitignore` ignores it), to the machine's own clone.
-
-1. Clone this repo: `~/_WAJBKODING/repos/claude-mods` on the Mac, `~/Work/_WAJBKODING/repos/claude-mods` on the ThinkPad.
-2. Make the symlink: `ln -s <clone> ~/.claude/claude-mods`.
-3. Register the marketplace and install the mods at the user scope:
+Use Claude Code with function-hook support. Version 2.1.295 passed the repository tests.
+Version 2.1.293 or later supports the verify-gate failure note through `session.append`.
+These plugins use the `claude-code` runtime API. They do not run in Codex or Claude Desktop.
 
 ```bash
-claude plugin marketplace add ~/.claude/claude-mods
+git clone https://github.com/wszaq/claude-mods.git
+cd claude-mods
+claude plugin marketplace add "$PWD"
+claude plugin install close-gate@claude-mods
 ```
+
+Start a new Claude Code session. Run `/closeok` to see the cached close facts.
+Follow [Installation](docs/installation.md) to install the other mods or update them.
+
+## Documentation
+
+- [Installation and updates](docs/installation.md)
+- [Usage tutorial](docs/usage.md)
+- [Reference for all five mods](docs/reference/mods.md)
+- [Architecture and local data](docs/architecture.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [GitHub Wiki](https://github.com/wszaq/claude-mods/wiki)
+- [Contribution guide](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+
+## Scope and dependencies
+
+The main features run locally. They do not call a model API or require a cloud account.
+Repository checks can run commands and contact services selected by your project.
+Peer radar uses SSH only when you configure a host. Its repository list is empty by default.
+
+Some integrations need tools that this repository does not supply:
+
+- `close-gate` can read an existing session claim under `~/.claude/session-claims/`.
+- `peer-radar` needs `~/.claude/hooks/session-register.py` for session boards and relay messages.
+- `peer-radar` can show an existing Linux `sh-vault-stable-sync` service.
+- `waste-alarm` can read tips from [Token Dashboard](https://github.com/wszaq/token-dashboard).
+- `verify-gate` can use an existing `~/.claude/skills/plain-language/plain-check.py` checker.
+
+These integrations are optional. Missing tools do not supply the corresponding feature.
+See [the reference](docs/reference/mods.md) before you enable an integration.
+
+## Checks and license
+
+Run the deterministic checks from the repository root:
 
 ```bash
-for m in close-gate waste-alarm verify-gate peer-radar deliverable-dock; do claude plugin install $m@claude-mods; done
+for mod in close-gate waste-alarm verify-gate peer-radar deliverable-dock; do
+  claude plugin validate "$mod" || exit 1
+  claude plugin test "$mod" || exit 1
+done
 ```
 
-4. `marketplace add` writes the expanded absolute path into `settings.json`. Change it back to `"path": "~/.claude/claude-mods"` (as for `nateherk-mods`), or the other machine gets a path that does not exist.
-
-## Update (after a code change or a `git pull`)
-
-The installed mods are copies made at install time, in `~/.claude/plugins/cache/claude-mods/<mod>/<version>/`. A change in the clone does nothing until you update them, and the update does nothing without a new version.
-
-1. Bump `version` in each changed `<mod>/.claude-plugin/plugin.json` and push.
-2. On each machine, after `git pull`:
-
-```bash
-claude plugin marketplace update claude-mods
-```
-
-```bash
-for m in close-gate waste-alarm verify-gate peer-radar deliverable-dock; do claude plugin update $m@claude-mods; done
-```
-
-3. Make sure that `settings.json` still has `"path": "~/.claude/claude-mods"`. Then open a new session or run `/reload-plugins`.
-
-Claude Code 2.1.293 or later. On 2.1.292, verify-gate cannot add its failure note (no `session.append`); the band still shows the failure.
-
-## Check
-
-Run `claude plugin validate <mod>` and `claude plugin test <mod>` for each mod.
+The source code uses the [MIT license](LICENSE). Claude Code remains a separate product.

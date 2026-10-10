@@ -96,12 +96,9 @@ export const register: Register = (on, options) => {
       runtime.platform = os.stdout.trim()
       const home = await $.env.get('HOME')
       runtime.host = home || ''
-      runtime.peerHost = String(options.peerHost || (runtime.platform === 'Darwin' ? 'peer.example' : 'peer.example'))
+      runtime.peerHost = String(options.peerHost || '')
       if (runtime.peerHost === 'off' || runtime.peerHost.startsWith('-')) runtime.peerHost = ''
-      const defaults = runtime.platform === 'Darwin'
-        ? '~/_WAJBKODING,~/.agents,~/_WAJBKODING/repos/claude-mods'
-        : '~/Work/_WAJBKODING,~/.agents,~/Work/_WAJBKODING/repos/claude-mods'
-      runtime.repos = String(options.repos || defaults).split(',').map(path => path.trim()).filter(Boolean)
+      runtime.repos = String(options.repos || '').split(',').map(path => path.trim()).filter(Boolean)
       $.clock.after(5000, () => { void collect($, runtime) })
       $.clock.every(120000, () => { void collect($, runtime) })
     } catch { /* Keep session start available. */ }
@@ -139,7 +136,7 @@ export const register: Register = (on, options) => {
     const rows = [<Button key="refresh" label="Refresh" onPress={() => collect($, runtime)} />]
     if (!radar) rows.push(<Text>Waiting for the first collection.</Text>)
     else {
-      rows.push(<Text>This machine ({radar.platform === 'Darwin' ? 'Mac' : 'ThinkPad'})</Text>)
+      rows.push(<Text>This machine ({radar.platform === 'Darwin' ? 'macOS' : 'Linux'})</Text>)
       rows.push(...radar.local.sessions.map(s => <Text>{s.state} {s.id} {s.workspace} {s.age} {s.claim}</Text>))
       rows.push(...radar.local.raw.map(line => <Text>{line}</Text>))
       rows.push(<Text>Peer</Text>)
