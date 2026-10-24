@@ -146,8 +146,13 @@ The pane has five cards. Each card opens or closes with its title, and keeps tha
   and a bar that compares its tokens with the largest agent. A background agent shows "running"
   until its turn ends. Then the card adds the tokens and time of that turn.
 - **Mods** lists the mods of the `claude-mods` and `nateherk-mods` marketplaces from the user
-  `enabledPlugins` setting. A click runs `claude plugin enable` or `claude plugin disable`,
-  then `/reload-plugins`, so the change also applies to the current session when it is idle.
+  `enabledPlugins` setting. Each row has a switch on its right side: the knob on the right means on.
+  A click on the switch runs `claude plugin enable` or `claude plugin disable`, then `/reload-plugins`.
+  The row then watches this session for about six seconds and says what is true:
+  "live" (on and loaded), "off" (off and not loaded), "not loaded here" or "still loaded here".
+  A session that cannot reload plugins, such as one over a remote connection, keeps
+  the old state until a new session starts. A toast says which case applies.
+  The card refreshes after each turn, and "↻ Refresh" reads the state again.
   The list does not show `session-panel`.
 
 The pane shows only the current session. It does not read other sessions or the transcript file.

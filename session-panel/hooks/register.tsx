@@ -58,14 +58,18 @@ const duration = (ms: number) => (ms >= 60000 ? `${Math.floor(ms / 60000)}m ${Ma
 
 const MARKETS = ['@claude-mods', '@nateherk-mods']
 
-// The mods of the two local marketplaces, as user settings enable them; this mod is left out.
-const loadMods = async ($: EngineInterface) => {
+// The mods of the two local marketplaces: on or off in user settings, and whether this
+// session has them loaded now (a loaded mod's commands carry its name). This mod is left out.
+const loadMods = async ($: EngineInterface, busy?: string) => {
   const map = ((await $.settings.read({ key: 'enabledPlugins' }).catch(() => undefined)) ?? {}) as Record<string, unknown>
+  const commands = await $.command.list().catch(() => [])
+  const loaded = new Set(commands.map(one => (one.plugin ?? '').split('@')[0]))
   const list = Object.entries(map)
     .filter(([id]) => MARKETS.some(market => id.endsWith(market)) && !id.startsWith('session-panel@'))
-    .map(([id, isOn]) => ({ id, isOn: isOn === true }))
+    .map(([id, isOn]) => ({ id, isOn: isOn === true, isLoaded: loaded.has(id.split('@')[0] ?? ''), isBusy: id === busy }))
     .sort((a, b) => a.id.localeCompare(b.id))
   await update($, mods, () => list)
+  return list
 }
 
 const isScratch = (path: string) => path.includes('/scratchpad/') || path.startsWith('/tmp/')
@@ -150,6 +154,7 @@ export const register: Register = on => {
   // A background agent's turns end here: add their tokens and time to its row.
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
+    if (!e.agentId) await loadMods($).catch(() => undefined)
     const agentId = e.agentId
     const usage = e.usage
     if (agentId) {
@@ -187,22 +192,37 @@ export const register: Register = on => {
     }
     const flip = (mod: Mod) => async () => {
       const verb = mod.isOn ? 'disable' : 'enable'
+      await loadMods($, mod.id)
       const ran = await $.process.run(['claude', 'plugin', verb, mod.id], { timeoutMs: 60000 }).catch(error => ({
         exitCode: 1,
         stdout: '',
         stderr: String(error),
       }))
       if (ran.exitCode !== 0) {
+        await loadMods($)
         $.ui.toast(`Cannot ${verb} ${mod.id}: ${ran.stderr.trim() || ran.stdout.trim()}`)
         return
       }
+      // /reload-plugins loads or unloads the mod here once the session is idle; some
+      // sessions refuse it (a remote connection). Do not wait for it: while a turn runs it
+      // stays queued. Watch the live state instead, then stop "applying" either way.
+      void $.command.run({ command: 'reload-plugins' }).catch(() => undefined)
+      const want = !mod.isOn
+      let now: Mod | undefined
+      for (let i = 0; i < 10; i++) {
+        await $.clock.sleep(600)
+        now = (await loadMods($, mod.id)).find(one => one.id === mod.id)
+        if (now?.isLoaded === want) break
+      }
       await loadMods($)
-      // /reload-plugins loads or unloads the mod in this session; it runs once the session is idle.
-      const reloaded = await $.command.run({ command: 'reload-plugins' }).then(
-        () => true,
-        () => false,
+      $.ui.toast(
+        now?.isLoaded === want
+          ? `${mod.id} ${verb}d in this session.`
+          : `${mod.id} ${verb}d for new sessions. Not applied here yet: this session cannot reload plugins now.`,
       )
-      $.ui.toast(reloaded ? `${mod.id} ${verb}d in this session.` : `${mod.id} ${verb}d. Run /reload-plugins to apply it here.`)
+    }
+    const refresh = async () => {
+      await loadMods($)
     }
     const card = (id: Card, title: string, body: RenderChildren) => (
       <Box key={`card-${id}`} flexDirection="column" borderStyle="round" borderDimColor paddingX={1} marginBottom={1}>
@@ -299,12 +319,30 @@ export const register: Register = on => {
           modList.length === 0 ? (
             <Text dimColor>No mods from claude-mods or nateherk-mods.</Text>
           ) : (
-            modList.map(mod => (
-              <Button key={`mod-${mod.id}`} plain onPress={flip(mod)}>
-                <Text dimColor={!mod.isOn}>{mod.id.split('@')[0]}</Text>{' '}
-                <Text color={mod.isOn ? 'suggestion' : 'inactive'}>{mod.isOn ? 'on' : 'off'}</Text>
-              </Button>
-            ))
+            [
+              ...modList.map(mod => (
+                <Box key={`row-${mod.id}`} flexDirection="row" justifyContent="space-between" gap={1}>
+                  <Text dimColor={!mod.isOn} wrap="truncate-end">{mod.id.split('@')[0]}</Text>
+                  <Box flexDirection="row" alignItems="center" flexShrink={0}>
+                    <Box marginRight={1}>
+                      <Text dimColor>
+                        {mod.isBusy ? 'applying' : mod.isOn === mod.isLoaded ? (mod.isLoaded ? 'live' : 'off') : mod.isOn ? 'not loaded here' : 'still loaded here'}
+                      </Text>
+                    </Box>
+                    {/* The switch: a coloured line beside a knob button. The line sits outside the
+                        Button, which draws its children in its own colour; green on, red off. */}
+                    {mod.isOn && <Text color="#22c55e">━━</Text>}
+                    <Button key={`mod-${mod.id}`} plain onPress={flip(mod)}>
+                      <Text dimColor={!mod.isOn}>●</Text>
+                    </Button>
+                    {!mod.isOn && <Text color="#ef4444">━━</Text>}
+                  </Box>
+                </Box>
+              )),
+              <Button key="mods-refresh" plain onPress={refresh}>
+                <Text dimColor>↻ Refresh</Text>
+              </Button>,
+            ]
           ),
         )}
       </Box>

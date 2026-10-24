@@ -28,8 +28,16 @@ test('the three cards follow the session', async ($, on) => {
   on('tool.call', () => ({ result: {} }))
   on('turn.complete', (_, e) => ({ text: e.answer, reason: 'answer' as const }))
   const ran: string[] = []
+  const live = new Set(['close-gate'])
+  on('command.list', () => ({ value: [...live].map(plugin => ({ name: plugin, description: '', source: 'plugin' as const, plugin })) }))
   on('process.run', (_, e) => {
     ran.push(e.argv.join(' '))
+    if (e.argv[2] === 'enable') {
+      enabled[String(e.argv[3])] = true
+      live.add(String(e.argv[3]).split('@')[0] ?? '')
+    }
+    // A session that cannot reload plugins: the setting changes, the loaded mod stays.
+    if (e.argv[2] === 'disable') enabled[String(e.argv[3])] = false
     return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('command.run', { command: 'reload-plugins' }, () => {
@@ -38,9 +46,9 @@ test('the three cards follow the session', async ($, on) => {
   })
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
-  on('settings.read', () => ({
-    value: { 'close-gate@claude-mods': true, 'goal-meter@nateherk-mods': false, 'session-panel@claude-mods': true, 'other@elsewhere': true },
-  }))
+  const enabled: Record<string, boolean> = { 'close-gate@claude-mods': true, 'goal-meter@nateherk-mods': false, 'session-panel@claude-mods': true, 'other@elsewhere': true }
+  on('settings.read', () => ({ value: { ...enabled } }))
+  on('clock.sleep', () => ({ value: undefined }))
 
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
   await $.tool.call({
@@ -63,7 +71,7 @@ test('the three cards follow the session', async ($, on) => {
   await $.tool.call({ tool: 'Agent', description: 'Scan the vault', subagent_type: 'Explore', prompt: 'x' })
 
   const marks = async (ui: { findAll: (q: object) => Promise<{ text?: string }[]> }) =>
-    (await ui.findAll({ type: 'Text', text: /^[✓●○]$/ })).map(one => one.text)
+    (await ui.findAll({ type: 'Text', text: /^[✓●○]$/ })).map(one => one.text).slice(0, 3) // the Progress card is first; Mods knobs use ● too
 
   const first = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect(await marks(first)).toEqual(['✓', '●', '○'])
@@ -88,8 +96,16 @@ test('the three cards follow the session', async ($, on) => {
 
   const modRows = (await second.findAll({ type: 'Text', text: /^(close-gate|goal-meter|session-panel|other)$/ })).map(one => one.text)
   expect(modRows).toEqual(['close-gate', 'goal-meter'])
+  expect((await second.find({ type: 'Text', text: /^live$/ }))?.text).toBe('live')
+  expect((await second.find({ type: 'Text', text: /^off$/ }))?.text).toBe('off')
   await second.press({ key: 'mod-goal-meter@nateherk-mods' })
   expect(ran).toEqual(['claude plugin enable goal-meter@nateherk-mods', '/reload-plugins'])
+  expect((await second.findAll({ type: 'Text', text: /^live$/ })).length).toBe(2)
+  const lines = async () => (await second.findAll({ type: 'Text', text: /^━━$/ })).map(one => one.props.color)
+  expect(await lines()).toEqual(['#22c55e', '#22c55e'])
+  await second.press({ key: 'mod-goal-meter@nateherk-mods' })
+  expect((await second.find({ type: 'Text', text: /^still loaded here$/ }))?.text).toBe('still loaded here')
+  expect(await lines()).toEqual(['#22c55e', '#ef4444'])
   await second.unmount()
 
   await $.tool.call({ tool: PLAN, done: [2], start: 3 })
