@@ -1,18 +1,17 @@
 import { atom, read, update } from 'claude-code'
-import type { Register, RenderChildren } from 'claude-code'
+import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 
-import type { Card, Collapsed, Output, Step } from '../types'
+import type { Agent, Card, Collapsed, Mod, Output, Step } from '../types'
 
 const PANE = 'session'
 const TITLE = 'Session'
 const steps = atom({ plugin: 'session-panel', key: 'steps' } as const, [] as Step[])
 const outputs = atom({ plugin: 'session-panel', key: 'outputs' } as const, [] as Output[])
 const used = atom({ plugin: 'session-panel', key: 'used' } as const, [] as string[])
-const collapsed = atom({ plugin: 'session-panel', key: 'collapsed' } as const, {
-  progress: false,
-  outputs: false,
-  used: false,
-} as Collapsed)
+const agents = atom({ plugin: 'session-panel', key: 'agents' } as const, [] as Agent[])
+const mods = atom({ plugin: 'session-panel', key: 'mods' } as const, [] as Mod[])
+const OPEN: Collapsed = { progress: false, outputs: false, used: false, subagents: false, mods: false }
+const collapsed = atom({ plugin: 'session-panel', key: 'collapsed' } as const, OPEN)
 
 const PLAN_TOOL = 'mcp__ccd_turn__update_plan'
 const WRAP_TOOL = 'mcp__ccd_turn__wrap_up'
@@ -53,13 +52,30 @@ const chipOf = (e: Record<string, unknown>): string | undefined => {
   return WEB_TOOLS[tool]
 }
 
+const shortModel = (model: string) => model.replace(/^claude-/, '').replace(/-\d{8}$/, '')
+const kTokens = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
+const duration = (ms: number) => (ms >= 60000 ? `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s` : `${Math.round(ms / 1000)}s`)
+
+const MARKETS = ['@claude-mods', '@nateherk-mods']
+
+// The mods of the two local marketplaces, as user settings enable them; this mod is left out.
+const loadMods = async ($: EngineInterface) => {
+  const map = ((await $.settings.read({ key: 'enabledPlugins' }).catch(() => undefined)) ?? {}) as Record<string, unknown>
+  const list = Object.entries(map)
+    .filter(([id]) => MARKETS.some(market => id.endsWith(market)) && !id.startsWith('session-panel@'))
+    .map(([id, isOn]) => ({ id, isOn: isOn === true }))
+    .sort((a, b) => a.id.localeCompare(b.id))
+  await update($, mods, () => list)
+}
+
 const isScratch = (path: string) => path.includes('/scratchpad/') || path.startsWith('/tmp/')
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'session', description: 'Show or hide the Session pane' })
     const saved = (await $.store.get('collapsed').catch(() => undefined)) as Collapsed | undefined
-    if (saved) await update($, collapsed, () => saved)
+    if (saved) await update($, collapsed, () => ({ ...OPEN, ...saved }))
+    await loadMods($).catch(() => undefined)
     void $.ui.open({ id: PANE, title: TITLE }).then(opened => {
       if (!opened.isPlaced) $.ui.log(`session-panel: pane not placed: ${opened.reason}`)
     })
@@ -79,7 +95,34 @@ export const register: Register = on => {
   })
 
   on('tool.call', async ($, e, next) => {
+    const isAgent = e.tool === 'Agent'
+    if (isAgent) {
+      const args = e as unknown as Record<string, unknown>
+      const row: Agent = {
+        id: e.tool_use_id,
+        name: String(args.description || args.subagent_type || 'agent'),
+        model: String(args.model ?? ''),
+        tokens: 0,
+        ms: 0,
+        startedAt: Date.now(),
+        isDone: false,
+      }
+      await update($, agents, list => [...list, row].slice(-50)).catch(() => undefined)
+    }
     const ran = await next(e)
+    if (isAgent) {
+      // A background agent answers at once without totals; turn.complete fills them in later.
+      const result = (ran.result ?? {}) as { agentId?: string; resolvedModel?: string; totalTokens?: number; totalDurationMs?: number }
+      await update($, agents, list =>
+        list.map(one =>
+          one.id !== e.tool_use_id
+            ? one
+            : typeof result.totalTokens === 'number'
+              ? { ...one, agentId: result.agentId, model: result.resolvedModel ?? one.model, tokens: result.totalTokens, ms: result.totalDurationMs ?? 0, isDone: true }
+              : { ...one, agentId: result.agentId, model: result.resolvedModel ?? one.model },
+        ),
+      ).catch(() => undefined)
+    }
     if (ran.deny !== undefined || ran.isError) return ran
 
     // The panel is a view: a failed update must never change the tool's result.
@@ -104,6 +147,25 @@ export const register: Register = on => {
     return ran
   })
 
+  // A background agent's turns end here: add their tokens and time to its row.
+  on('turn.complete', async ($, e, next) => {
+    const done = await next(e)
+    const agentId = e.agentId
+    const usage = e.usage
+    if (agentId) {
+      const tokens = usage ? usage.input_tokens + usage.output_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens : 0
+      await update($, agents, list =>
+        list.map(one =>
+          one.agentId !== agentId || one.isDone
+            ? one
+            : { ...one, model: usage?.model ?? one.model, tokens: one.tokens + tokens, ms: Date.now() - one.startedAt, isDone: true },
+        ),
+      ).catch(() => undefined)
+    }
+
+    return done
+  })
+
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const shut = await read($, collapsed)
@@ -123,6 +185,20 @@ export const register: Register = on => {
         $.ui.toast(`Cannot open ${path}: ${why}`)
       }
     }
+    const flip = (mod: Mod) => async () => {
+      const verb = mod.isOn ? 'disable' : 'enable'
+      const ran = await $.process.run(['claude', 'plugin', verb, mod.id], { timeoutMs: 60000 }).catch(error => ({
+        exitCode: 1,
+        stdout: '',
+        stderr: String(error),
+      }))
+      if (ran.exitCode !== 0) {
+        $.ui.toast(`Cannot ${verb} ${mod.id}: ${ran.stderr.trim() || ran.stdout.trim()}`)
+        return
+      }
+      await loadMods($)
+      $.ui.toast(`${mod.id} ${verb}d. The change applies to new sessions.`)
+    }
     const card = (id: Card, title: string, body: RenderChildren) => (
       <Box key={`card-${id}`} flexDirection="column" borderStyle="round" borderDimColor paddingX={1} marginBottom={1}>
         <Button key={`toggle-${id}`} plain onPress={toggle(id)}>
@@ -135,6 +211,9 @@ export const register: Register = on => {
     const stepList = await read($, steps)
     const fileList = await read($, outputs)
     const chipList = await read($, used)
+    const agentList = await read($, agents)
+    const modList = await read($, mods)
+    const most = Math.max(1, ...agentList.map(one => one.tokens))
 
     return (
       <Box flexDirection="column">
@@ -185,6 +264,42 @@ export const register: Register = on => {
                 </Box>
               ))}
             </Box>
+          ),
+        )}
+        {card(
+          'subagents',
+          'Subagents',
+          agentList.length === 0 ? (
+            <Text dimColor>No subagents yet.</Text>
+          ) : (
+            agentList.map(one => (
+              <Box key={`agent-${one.id}`} flexDirection="column" marginBottom={1}>
+                <Box flexDirection="row" justifyContent="space-between" gap={1}>
+                  <Text wrap="truncate-end">{one.name}</Text>
+                  <Text dimColor>{one.model ? shortModel(one.model) : '…'}</Text>
+                </Box>
+                <Text dimColor>
+                  {one.isDone ? `${kTokens(one.tokens)} tokens · ${duration(one.ms)}` : 'running'}
+                </Text>
+                <Box flexDirection="row" height={1}>
+                  <Box width={`${Math.max(2, Math.round((one.tokens / most) * 100))}%`} backgroundColor={one.isDone ? 'suggestion' : 'inactive'} />
+                </Box>
+              </Box>
+            ))
+          ),
+        )}
+        {card(
+          'mods',
+          'Mods',
+          modList.length === 0 ? (
+            <Text dimColor>No mods from claude-mods or nateherk-mods.</Text>
+          ) : (
+            modList.map(mod => (
+              <Button key={`mod-${mod.id}`} plain onPress={flip(mod)}>
+                <Text dimColor={!mod.isOn}>{mod.id.split('@')[0]}</Text>{' '}
+                <Text color={mod.isOn ? 'suggestion' : 'inactive'}>{mod.isOn ? 'on' : 'off'}</Text>
+              </Button>
+            ))
           ),
         )}
       </Box>

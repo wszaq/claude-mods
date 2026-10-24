@@ -131,7 +131,7 @@ Ship means a local copy. It does not upload or email the file.
 The pane opens at session start. A pane that opens without a command needs a wide window.
 In a narrow window, run `/session`.
 
-The pane has three cards. Each card opens or closes with its title, and keeps that state across sessions.
+The pane has five cards. Each card opens or closes with its title, and keeps that state across sessions.
 
 - **Progress** shows the task list of the Claude Code desktop app (`update_plan`).
   A `wrap_up` call marks all steps as done. Subagent calls do not change the list.
@@ -141,6 +141,13 @@ The pane has three cards. Each card opens or closes with its title, and keeps th
   directory or a granted folder. Other files show a toast with the reason.
 - **Used** shows one chip for each MCP server, skill, Web search, and Web fetch that the session used.
   The card does not show app servers (`ccd_*`) or servers that have an ID as their name.
+
+- **Subagents** shows one row for each Agent call: its description, model, tokens, and time,
+  and a bar that compares its tokens with the largest agent. A background agent shows "running"
+  until its turn ends. Then the card adds the tokens and time of that turn.
+- **Mods** lists the mods of the `claude-mods` and `nateherk-mods` marketplaces from the user
+  `enabledPlugins` setting. A click runs `claude plugin enable` or `claude plugin disable`.
+  The change applies to new sessions. The list does not show `session-panel`.
 
 The pane shows only the current session. It does not read other sessions or the transcript file.
 It starts empty after the mod loads, because it counts only tool calls that it sees.
