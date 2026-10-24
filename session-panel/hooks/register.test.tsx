@@ -27,6 +27,15 @@ test('the three cards follow the session', async ($, on) => {
   )
   on('tool.call', () => ({ result: {} }))
   on('turn.complete', (_, e) => ({ text: e.answer, reason: 'answer' as const }))
+  const ran: string[] = []
+  on('process.run', (_, e) => {
+    ran.push(e.argv.join(' '))
+    return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('command.run', { command: 'reload-plugins' }, () => {
+    ran.push('/reload-plugins')
+    return { text: 'Reloaded.' }
+  })
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
   on('settings.read', () => ({
@@ -79,6 +88,8 @@ test('the three cards follow the session', async ($, on) => {
 
   const modRows = (await second.findAll({ type: 'Text', text: /^(close-gate|goal-meter|session-panel|other)$/ })).map(one => one.text)
   expect(modRows).toEqual(['close-gate', 'goal-meter'])
+  await second.press({ key: 'mod-goal-meter@nateherk-mods' })
+  expect(ran).toEqual(['claude plugin enable goal-meter@nateherk-mods', '/reload-plugins'])
   await second.unmount()
 
   await $.tool.call({ tool: PLAN, done: [2], start: 3 })

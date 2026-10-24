@@ -197,7 +197,12 @@ export const register: Register = on => {
         return
       }
       await loadMods($)
-      $.ui.toast(`${mod.id} ${verb}d. The change applies to new sessions.`)
+      // /reload-plugins loads or unloads the mod in this session; it runs once the session is idle.
+      const reloaded = await $.command.run({ command: 'reload-plugins' }).then(
+        () => true,
+        () => false,
+      )
+      $.ui.toast(reloaded ? `${mod.id} ${verb}d in this session.` : `${mod.id} ${verb}d. Run /reload-plugins to apply it here.`)
     }
     const card = (id: Card, title: string, body: RenderChildren) => (
       <Box key={`card-${id}`} flexDirection="column" borderStyle="round" borderDimColor paddingX={1} marginBottom={1}>

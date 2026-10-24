@@ -146,8 +146,9 @@ The pane has five cards. Each card opens or closes with its title, and keeps tha
   and a bar that compares its tokens with the largest agent. A background agent shows "running"
   until its turn ends. Then the card adds the tokens and time of that turn.
 - **Mods** lists the mods of the `claude-mods` and `nateherk-mods` marketplaces from the user
-  `enabledPlugins` setting. A click runs `claude plugin enable` or `claude plugin disable`.
-  The change applies to new sessions. The list does not show `session-panel`.
+  `enabledPlugins` setting. A click runs `claude plugin enable` or `claude plugin disable`,
+  then `/reload-plugins`, so the change also applies to the current session when it is idle.
+  The list does not show `session-panel`.
 
 The pane shows only the current session. It does not read other sessions or the transcript file.
 It starts empty after the mod loads, because it counts only tool calls that it sees.
