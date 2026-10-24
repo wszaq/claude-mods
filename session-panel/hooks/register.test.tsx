@@ -156,7 +156,8 @@ test('Outputs lists the files made for the person, not edits or the agent own fi
   on('command.register', () => ({ value: { command: 'session' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
-  on('session.id', () => ({ value: 'abc123-session' }))
+  let id = 'abc123-session'
+  on('session.id', () => ({ value: id }))
   on('env.get', () => ({ value: '/home/me' }))
   on('command.list', () => ({ value: [] }))
   on('store.get', () => ({ value: undefined }))
@@ -174,7 +175,7 @@ test('Outputs lists the files made for the person, not edits or the agent own fi
   await $.tool.call({ tool: 'Write', file_path: '/work/proj/report.md', content: 'x' })
   await $.tool.call({ tool: 'Edit', file_path: '/work/proj/README.md', old_string: 'a', new_string: 'b' })
   await $.tool.call({ tool: 'Write', file_path: '/work/proj/CHANGELOG.md', content: 'old' })
-  await $.tool.call({ tool: 'Write', file_path: '/work/proj/_COWORK/sessions/abc123-session.md', content: 'x' })
+  await $.tool.call({ tool: 'Write', file_path: '/work/proj/logs/abc123-session.md', content: 'x' })
   await $.tool.call({ tool: 'Write', file_path: '/home/me/.claude/projects/p/memory/note.md', content: 'x' })
   await $.tool.call({ tool: 'Write', file_path: '/work/proj/.gitignore', content: 'x' })
   await $.tool.call({ tool: 'Write', file_path: '/tmp/claude-1000/p/abc123-session/scratchpad/draft.md', content: 'x' })
@@ -184,6 +185,8 @@ test('Outputs lists the files made for the person, not edits or the agent own fi
   await $.tool.call({ tool: 'Bash', command: 'pandoc report.md -o ~/Downloads/brief.docx' })
   await $.tool.call({ tool: 'Write', file_path: '/work/proj/research.md', content: 'x', agentId: 'a1' })
   await $.tool.call({ tool: 'Edit', file_path: '/work/proj/report.md', old_string: 'a', new_string: 'b' })
+  id = 'def456-after-clear' // a /clear: a new id, no session.start
+  await $.tool.call({ tool: 'Write', file_path: '/work/proj/logs/def456-after-clear.md', content: 'x' })
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
@@ -195,4 +198,29 @@ test('Outputs lists the files made for the person, not edits or the agent own fi
     expect((await ui.find({ type: 'Text', text: 'me/Downloads' }))?.text).toBe('me/Downloads')
     await ui.unmount()
   }
+})
+
+// A worktree session runs inside a hidden folder: only the part below the working folder is tested for hidden names.
+test('Outputs lists new files in a worktree session', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'session' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('command.list', () => ({ value: [] }))
+  on('store.get', () => ({ value: undefined }))
+  on('settings.read', () => ({ value: {} }))
+  on('tool.call', { tool: 'Write' }, () => ({ result: { type: 'create' } }))
+  on('tool.call', () => ({ result: {} }))
+  on('fs.stat', () => ({ value: { kind: 'file' as const, size: 1, mtimeMs: Date.now(), isLink: false } }))
+
+  await $.session.start({ cwd: '/r/.claude/worktrees/w1', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'Write', file_path: '/r/.claude/worktrees/w1/report.md', content: 'x' })
+  await $.tool.call({ tool: 'Write', file_path: '/r/.claude/worktrees/w1/.git/info.md', content: 'x' })
+  await $.tool.call({ tool: 'Write', file_path: '/r/.claude/notes.md', content: 'x' })
+  await $.tool.call({ tool: 'Write', file_path: '/r/docs/guide.md', content: 'x' })
+  await $.tool.call({ tool: 'Bash', command: 'make out/deck.pdf' })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  const names = (await ui.findAll({ type: 'Text', text: /\.(md|pdf)$/ })).map(one => one.text)
+  expect(names).toEqual(['deck.pdf', 'guide.md', 'report.md'])
+  await ui.unmount()
 })

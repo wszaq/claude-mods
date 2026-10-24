@@ -138,11 +138,14 @@ export const register: Register = on => {
   let home = ''
   // The agent's own working files: scratch and temp files, hidden files and folders (.claude memory,
   // .git), and files named after this session (its activity log). Outputs leaves them out.
-  const isOwn = (path: string) => isScratch(path) || /\/\.[^/.]/.test(path) || (sessionId !== '' && path.includes(sessionId))
+  // Below the working folder only its own part is tested: a worktree session runs inside .claude/worktrees/.
+  const isOwn = (path: string) => {
+    const own = path.startsWith(`${cwd}/`) ? path.slice(cwd.length) : path
+    return isScratch(path) || /\/\.[^/.]/.test(own) || (sessionId !== '' && path.includes(sessionId))
+  }
 
   on('session.start', async ($, e, next) => {
     cwd = e.cwd
-    sessionId = await $.session.id().catch(() => '')
     home = (await $.env.get('HOME').catch(() => undefined)) ?? ''
     await $.command.register({ name: 'session', description: 'Show or hide the Session pane' })
     const saved = (await $.store.get('collapsed').catch(() => undefined)) as Collapsed | undefined
@@ -217,6 +220,8 @@ export const register: Register = on => {
       const result = (ran.result ?? {}) as { type?: string; attachments?: { path?: string }[]; backgroundTaskId?: string }
       const key = FILE_TOOLS[String(e.tool)]
       const path = key ? args[key] : undefined
+      // Read the id each time: after a /clear the session goes on under a new id with no session.start.
+      if (key || e.tool === 'Bash') sessionId = await $.session.id().catch(() => sessionId)
       if (typeof path === 'string') {
         await record(path, e.tool === 'Write' && result.type === 'create' && !isOwn(path))
       }

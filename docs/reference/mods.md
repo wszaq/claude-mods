@@ -146,6 +146,8 @@ The pane has five cards. Each card opens or closes with its title, and keeps tha
   An Edit, a NotebookEdit, or a Write to an old file only moves a listed file to the top.
   The card does not add the agent's own files. These are scratchpad and `/tmp/` files, hidden
   files and folders such as `.claude` and `.git`, and files with the session ID in their path.
+  For a file in the working directory, only the part of the path below that directory counts.
+  Thus a worktree session under `.claude/worktrees/` shows its new files.
 
   A sent or published file is always added. Sent scratchpad files are dim. The list keeps 100 paths.
   A click opens the file in the desktop Files pane. The app opens only files in the working
