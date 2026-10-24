@@ -146,7 +146,8 @@ The pane has five cards. Each card opens or closes with its title, and keeps tha
   and a bar that compares its tokens with the largest agent. A background agent shows "running"
   until its turn ends. Then the card adds the tokens and time of that turn.
 - **Mods** lists the mods of the `claude-mods` and `nateherk-mods` marketplaces from the user
-  `enabledPlugins` setting. Each row has a switch on its right side: the knob on the right means on.
+  `enabledPlugins` setting. Each row has a switch on its right side: a green line with the knob on
+  the right means on, a red line with the knob on the left means off. The terminal draws it as text.
   A click on the switch runs `claude plugin enable` or `claude plugin disable`, then `/reload-plugins`.
   The row then watches this session for about six seconds and says what is true:
   "live" (on and loaded), "off" (off and not loaded), "not loaded here" or "still loaded here".

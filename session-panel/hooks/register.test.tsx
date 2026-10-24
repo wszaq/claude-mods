@@ -101,7 +101,8 @@ test('the three cards follow the session', async ($, on) => {
   await second.press({ key: 'mod-goal-meter@nateherk-mods' })
   expect(ran).toEqual(['claude plugin enable goal-meter@nateherk-mods', '/reload-plugins'])
   expect((await second.findAll({ type: 'Text', text: /^live$/ })).length).toBe(2)
-  const lines = async () => (await second.findAll({ type: 'Text', text: /^━━$/ })).map(one => one.props.color)
+  const lines = async () =>
+    (await second.findAll({ type: 'Svg' })).map(one => String(one.props.source).match(/stroke="(#[0-9a-f]+)"/)?.[1])
   expect(await lines()).toEqual(['#22c55e', '#22c55e'])
   await second.press({ key: 'mod-goal-meter@nateherk-mods' })
   expect((await second.find({ type: 'Text', text: /^still loaded here$/ }))?.text).toBe('still loaded here')

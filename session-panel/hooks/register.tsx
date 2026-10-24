@@ -72,6 +72,15 @@ const loadMods = async ($: EngineInterface, busy?: string) => {
   return list
 }
 
+// The Mods switch as one drawing: a thick line that touches its knob, green on, red off.
+const switchSvg = (isOn: boolean) => {
+  const line = isOn
+    ? '<line x1="2" y1="8" x2="22" y2="8" stroke="#22c55e" stroke-width="4" stroke-linecap="round"/>'
+    : '<line x1="14" y1="8" x2="34" y2="8" stroke="#ef4444" stroke-width="4" stroke-linecap="round"/>'
+  const knob = `<circle cx="${isOn ? 28 : 8}" cy="8" r="7" fill="${isOn ? '#ececec' : '#8a8a8a'}"/>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="16" viewBox="0 0 36 16">${line}${knob}</svg>`
+}
+
 const isScratch = (path: string) => path.includes('/scratchpad/') || path.startsWith('/tmp/')
 
 export const register: Register = on => {
@@ -172,7 +181,9 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const elements = $.ui.resolve(e)
+    const { Box, Text, Button } = elements
+    const Svg = 'Svg' in elements ? elements.Svg : undefined
     const shut = await read($, collapsed)
 
     const toggle = (card: Card) => async () => {
@@ -329,13 +340,24 @@ export const register: Register = on => {
                         {mod.isBusy ? 'applying' : mod.isOn === mod.isLoaded ? (mod.isLoaded ? 'live' : 'off') : mod.isOn ? 'not loaded here' : 'still loaded here'}
                       </Text>
                     </Box>
-                    {/* The switch: a coloured line beside a knob button. The line sits outside the
-                        Button, which draws its children in its own colour; green on, red off. */}
-                    {mod.isOn && <Text color="#22c55e">━━</Text>}
-                    <Button key={`mod-${mod.id}`} plain onPress={flip(mod)}>
-                      <Text dimColor={!mod.isOn}>●</Text>
-                    </Button>
-                    {!mod.isOn && <Text color="#ef4444">━━</Text>}
+                    {Svg ? (
+                      // A Button holds only text, so the drawing sits under a blank Button laid over it.
+                      <Box position="relative" width={5}>
+                        <Svg source={switchSvg(mod.isOn)} alt={mod.isOn ? 'on' : 'off'} width={36} height={16} />
+                        <Box position="absolute" top={0} left={0}>
+                          <Button key={`mod-${mod.id}`} plain onPress={flip(mod)} label="     " />
+                        </Box>
+                      </Box>
+                    ) : (
+                      // Where no SVG is drawn (the terminal): the line beside a knob button.
+                      [
+                        mod.isOn && <Text key="on-line" color="#22c55e">━━</Text>,
+                        <Button key={`mod-${mod.id}`} plain onPress={flip(mod)}>
+                          <Text dimColor={!mod.isOn}>●</Text>
+                        </Button>,
+                        !mod.isOn && <Text key="off-line" color="#ef4444">━━</Text>,
+                      ]
+                    )}
                   </Box>
                 </Box>
               )),
