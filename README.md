@@ -10,7 +10,7 @@ A mod observes session events and adds commands, status text, or a user interfac
 | verify-gate | Run repository checks after a turn that edits files | `/verify` |
 | peer-radar | Show optional local and SSH peer session boards and repository sync state | `/radar`, `/relay` |
 | deliverable-dock | Record output files and copy a selected file to Downloads | `/ship` |
-| session-panel | Show the task list, files, connectors, subagents, and a mod switchboard in one pane | `/session` |
+| session-panel | Show the task list, files made for you, connectors, subagent tokens and prices, and a mod switchboard in one pane | `/session` |
 
 ## Start
 

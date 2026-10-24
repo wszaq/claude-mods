@@ -155,13 +155,16 @@ The pane has five cards. Each card opens or closes with its title, and keeps tha
 - **Used** shows one chip for each MCP server, skill, Web search, and Web fetch that the session used.
   The card does not show app servers (`ccd_*`) or servers that have an ID as their name.
 
-- **Subagents** shows one row for each Agent call: its description, model, tokens, time, and price,
-  and a bar that compares its tokens with the largest agent. A background agent shows "running"
-  until its turn ends. Then the card adds the tokens and time of that turn.
-  The price is the API list price in US dollars of all the model calls of that agent.
-  The mod adds the price of each call from its token counts. A cache write counts at the
-  5-minute rate. A Claude Haiku 5.5 call with a prompt over 100K tokens counts at the higher rate.
+- **Subagents** shows one row for each Agent call with its description, model, tokens, time, and price.
+  A bar compares its tokens with the largest agent. A background agent shows "running"
+  until its turn ends.
+  The tokens and the price are sums over all the model calls of that agent. The tokens include
+  input, output, cache read, and cache write tokens. The Agent result gives the tokens of the last
+  call only, so the card does not use that number.
+  The price is the API list price in US dollars. It is not a subscription bill.
+  A cache write counts at the 5-minute rate. A Claude Haiku 5.5 call with a prompt over 100K tokens counts at the higher rate.
   The row shows no price if a call used a model that is not in the price table of the mod.
+  The row shows only the time if the mod did not see the model calls of that agent.
 - **Mods** lists the mods of the `claude-mods` and `nateherk-mods` marketplaces from the user
   `enabledPlugins` setting. Each row has a switch on its right side: a green line with the knob on
   the right means on, a red line with the knob on the left means off. The terminal draws it as text.

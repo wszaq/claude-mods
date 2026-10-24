@@ -1,6 +1,6 @@
 # claude-mods Wiki
 
-Six Claude Code mods support local session checks, command counts, repository verification, peer boards, and file delivery.
+Six Claude Code mods support local session checks, command counts, repository verification, peer boards, file delivery, and a session pane.
 
 Start with [Installation](Installation), then follow [Usage](Usage).
 Use [Mod Reference](Mod-Reference) for commands and configuration.

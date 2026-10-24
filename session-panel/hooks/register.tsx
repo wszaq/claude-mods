@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderChildren, TurnUsage } from 'claude-code'
 
-import type { Agent, Card, Collapsed, Mod, Output, Step } from '../types'
+import type { Agent, Card, Collapsed, Mod, Output, Step, Total } from '../types'
 
 const PANE = 'session'
 const TITLE = 'Session'
@@ -9,7 +9,7 @@ const steps = atom({ plugin: 'session-panel', key: 'steps' } as const, [] as Ste
 const outputs = atom({ plugin: 'session-panel', key: 'outputs' } as const, [] as Output[])
 const used = atom({ plugin: 'session-panel', key: 'used' } as const, [] as string[])
 const agents = atom({ plugin: 'session-panel', key: 'agents' } as const, [] as Agent[])
-const spend = atom({ plugin: 'session-panel', key: 'spend' } as const, {} as Record<string, number | null>)
+const totals = atom({ plugin: 'session-panel', key: 'totals' } as const, {} as Record<string, Total>)
 const mods = atom({ plugin: 'session-panel', key: 'mods' } as const, [] as Mod[])
 const OPEN: Collapsed = { progress: false, outputs: false, used: false, subagents: false, mods: false }
 const collapsed = atom({ plugin: 'session-panel', key: 'collapsed' } as const, OPEN)
@@ -54,7 +54,7 @@ const chipOf = (e: Record<string, unknown>): string | undefined => {
 }
 
 const shortModel = (model: string) => model.replace(/^claude-/, '').replace(/-\d{8}$/, '')
-const kTokens = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
+const kTokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
 const duration = (ms: number) => (ms >= 60000 ? `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s` : `${Math.round(ms / 1000)}s`)
 
 // API list prices, USD per million tokens: input, output, cache read (the claude-api skill, 2026-10-06).
@@ -83,6 +83,8 @@ const priceOf = (usage: TurnUsage) => {
 }
 // The price at the end of a Subagents line; none while it is unknown.
 const priceText = (usd?: number | null) => (typeof usd !== 'number' ? '' : usd < 0.01 ? ' · <$0.01' : ` · $${usd.toFixed(2)}`)
+// A finished row: the tokens of all its model calls, its time and its price.
+const doneText = (total: Total | undefined, ms: number) => `${total ? `${kTokens(total.tokens)} tokens · ` : ''}${duration(ms)}${priceText(total?.usd)}`
 
 const MARKETS = ['@claude-mods', '@nateherk-mods']
 
@@ -177,7 +179,6 @@ export const register: Register = on => {
         id: e.tool_use_id,
         name: String(args.description || args.subagent_type || 'agent'),
         model: String(args.model ?? ''),
-        tokens: 0,
         ms: 0,
         startedAt: Date.now(),
         isDone: false,
@@ -187,14 +188,15 @@ export const register: Register = on => {
     const startedAt = Date.now()
     const ran = await next(e)
     if (isAgent) {
-      // A background agent answers at once without totals; turn.complete fills them in later.
+      // A background agent answers at once without totals; its turn.complete marks it done later.
+      // totalTokens counts the last model call only, so it marks the row done and is not shown.
       const result = (ran.result ?? {}) as { agentId?: string; resolvedModel?: string; totalTokens?: number; totalDurationMs?: number }
       await update($, agents, list =>
         list.map(one =>
           one.id !== e.tool_use_id
             ? one
             : typeof result.totalTokens === 'number'
-              ? { ...one, agentId: result.agentId, model: result.resolvedModel ?? one.model, tokens: result.totalTokens, ms: result.totalDurationMs ?? 0, isDone: true }
+              ? { ...one, agentId: result.agentId, model: result.resolvedModel ?? one.model, ms: result.totalDurationMs ?? 0, isDone: true }
               : { ...one, agentId: result.agentId, model: result.resolvedModel ?? one.model },
         ),
       ).catch(() => undefined)
@@ -251,35 +253,36 @@ export const register: Register = on => {
     return ran
   })
 
-  // Each model call of a subagent adds its price. A foreground agent's calls come before its
-  // tool.call learns the agent's id, so the price is kept by id and joined when the pane draws.
+  // Each model call of a subagent adds its tokens and price. A foreground agent's calls come before
+  // its tool.call learns the agent's id, so the totals are kept by id and joined when the pane draws.
   on('turn.step', async function* ($, e, next) {
     const step = yield* next(e)
     const agentId = e.agentId
     if (agentId && step.usage) {
-      const cost = priceOf(step.usage)
-      await update($, spend, all => {
-        const sum = all[agentId]
-        return { ...all, [agentId]: sum === null || cost === undefined ? null : (sum ?? 0) + cost }
+      const usage = step.usage
+      const cost = priceOf(usage)
+      const tokens = usage.input_tokens + usage.output_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
+      await update($, totals, all => {
+        const sum = all[agentId] ?? { tokens: 0, usd: 0 }
+        return { ...all, [agentId]: { tokens: sum.tokens + tokens, usd: sum.usd === null || cost === undefined ? null : sum.usd + cost } }
       }).catch(() => undefined)
     }
 
     return step
   })
 
-  // A background agent's turns end here: add their tokens and time to its row.
+  // A background agent's turns end here: set its time and mark its row done.
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
     if (!e.agentId) await loadMods($).catch(() => undefined)
     const agentId = e.agentId
     const usage = e.usage
     if (agentId) {
-      const tokens = usage ? usage.input_tokens + usage.output_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens : 0
       await update($, agents, list =>
         list.map(one =>
           one.agentId !== agentId || one.isDone
             ? one
-            : { ...one, model: usage?.model ?? one.model, tokens: one.tokens + tokens, ms: Date.now() - one.startedAt, isDone: true },
+            : { ...one, model: usage?.model ?? one.model, ms: Date.now() - one.startedAt, isDone: true },
         ),
       ).catch(() => undefined)
     }
@@ -355,9 +358,10 @@ export const register: Register = on => {
     const fileList = await read($, outputs)
     const chipList = await read($, used)
     const agentList = await read($, agents)
-    const spent = await read($, spend)
+    const sums = await read($, totals)
     const modList = await read($, mods)
-    const most = Math.max(1, ...agentList.map(one => one.tokens))
+    const tokensOf = (one: Agent) => sums[one.agentId ?? '']?.tokens ?? 0
+    const most = Math.max(1, ...agentList.map(tokensOf))
 
     return (
       <Box flexDirection="column">
@@ -423,10 +427,10 @@ export const register: Register = on => {
                   <Text dimColor>{one.model ? shortModel(one.model) : '…'}</Text>
                 </Box>
                 <Text dimColor>
-                  {one.isDone ? `${kTokens(one.tokens)} tokens · ${duration(one.ms)}${priceText(spent[one.agentId ?? ''])}` : 'running'}
+                  {one.isDone ? doneText(sums[one.agentId ?? ''], one.ms) : 'running'}
                 </Text>
                 <Box flexDirection="row" height={1}>
-                  <Box width={`${Math.max(2, Math.round((one.tokens / most) * 100))}%`} backgroundColor={one.isDone ? 'suggestion' : 'inactive'} />
+                  <Box width={`${Math.max(2, Math.round((tokensOf(one) / most) * 100))}%`} backgroundColor={one.isDone ? 'suggestion' : 'inactive'} />
                 </Box>
               </Box>
             ))

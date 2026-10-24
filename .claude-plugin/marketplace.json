@@ -32,7 +32,7 @@
     {
       "name": "session-panel",
       "source": "./session-panel",
-      "description": "Session pane with the task list, files made for you and used connectors"
+      "description": "Session pane with the task list, files made for you, used connectors, subagent tokens and prices, and mod switches"
     }
   ]
 }

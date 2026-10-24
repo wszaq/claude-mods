@@ -21,7 +21,7 @@ Git ignores runtime-generated `.claude-plugin/types/` folders.
 ## Events and state
 
 Each module exports `register`. The module registers handlers for session, tool, command, and UI events.
-The mods use runtime atoms for session state. Waste-alarm and peer-radar also use the plugin store.
+The mods use runtime atoms for session state. Waste-alarm, peer-radar, and session-panel also use the plugin store.
 Bands call the next UI handler before they add their own row.
 This lets multiple bands appear together.
 
@@ -40,6 +40,8 @@ Verify-gate runs project commands and retains recent output in session state.
 Peer-radar reads boards, repository facts, and optional service logs.
 A configured SSH host receives registry commands. A configured repository can contact its Git remote through fetch.
 Deliverable-dock stores local paths in session state and copies selected files to Downloads.
+Session-panel stores its cards in session state and only the open or closed state of each card in the plugin store.
+It reads the token counts of each subagent model call to show tokens and a price.
 
 No mod has its own telemetry endpoint or model API call.
 A project check, SSH command, or optional external tool can have its own network behavior.
@@ -49,5 +51,6 @@ A project check, SSH command, or optional external tool can have its own network
 The close facts are a snapshot. They are not a release approval or a security audit.
 Verify-gate selects one check per repository. It does not replace a project's required CI checks.
 Peer-radar depends on an external registry with a specific table format.
+Session-panel prices come from a fixed price table in the mod. They are API list prices, not a bill.
 
 Deliverable detection uses Write events and Bash tokens. It cannot detect every file operation.

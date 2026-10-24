@@ -26,6 +26,8 @@ test('the three cards follow the session', async ($, on) => {
       ? { result: { agentId: 'bg1', content: [] } }
       : e.description === 'Odd model'
         ? { result: { agentId: 'a2', resolvedModel: 'claude-mystery-9', totalTokens: 2000, totalDurationMs: 3000, totalToolUseCount: 1, content: [] } }
+        : e.description === 'Quiet run'
+          ? { result: { agentId: 'a3', resolvedModel: 'claude-haiku-5-5', totalTokens: 500, totalDurationMs: 4000, totalToolUseCount: 0, content: [] } }
         : { result: { agentId: 'a1', resolvedModel: 'claude-haiku-5-5', totalTokens: 12345, totalDurationMs: 65000, totalToolUseCount: 3, content: [] } },
   )
   on('tool.call', { tool: 'Write' }, (_, e) => ({ result: { type: e.content === 'x' ? 'create' : 'update' } }))
@@ -92,6 +94,8 @@ test('the three cards follow the session', async ($, on) => {
   await step('m1', { model: 'claude-opus-5-5', input_tokens: 1000000, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 })
   await $.tool.call({ tool: 'Agent', description: 'Scan the vault', subagent_type: 'Explore', prompt: 'x' })
   await $.tool.call({ tool: 'Agent', description: 'Odd model', prompt: 'x' })
+  // An agent whose model calls the mod did not see: no tokens or price, only its time.
+  await $.tool.call({ tool: 'Agent', description: 'Quiet run', prompt: 'x' })
   await step('o1', { model: 'claude-mystery-9', input_tokens: 1000, output_tokens: 1000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }, 'a2')
 
   const marks = async (ui: { findAll: (q: object) => Promise<{ text?: string }[]> }) =>
@@ -105,9 +109,12 @@ test('the three cards follow the session', async ($, on) => {
   expect(chips).toEqual(['ask-me', 'Web search', 'gmail'])
   expect((await first.find({ type: 'Text', text: /Scan the vault/ }))?.text).toBe('Scan the vault')
   expect((await first.find({ type: 'Text', text: /haiku/ }))?.text).toBe('haiku-5-5')
-  expect((await first.find({ type: 'Text', text: /^12\.3k tokens/ }))?.text).toBe('12.3k tokens · 1m 5s · $0.02')
+  // Tokens are the sum of all model calls (63000 + 154000), not the result's totalTokens (12345: the last call).
+  expect((await first.find({ type: 'Text', text: /^217\.0k tokens/ }))?.text).toBe('217.0k tokens · 1m 5s · $0.02')
+  expect(await first.find({ type: 'Text', text: /12\.3k/ })).toBeUndefined()
   // A model without a price shows no price.
   expect((await first.find({ type: 'Text', text: /^2\.0k tokens/ }))?.text).toBe('2.0k tokens · 3s')
+  expect((await first.find({ type: 'Text', text: /^4s$/ }))?.text).toBe('4s')
   await first.unmount()
 
   // A background agent: the launch has no totals, its turn.complete brings them.
@@ -120,7 +127,8 @@ test('the three cards follow the session', async ($, on) => {
   await $.turn.complete({ answer: 'ok', durationMs: 2000, isAborted: false, turnId: 't1', agentId: 'bg1', reason: 'answer', usage: { model: 'claude-haiku-5-5', input_tokens: 1000, output_tokens: 500, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } })
   const second = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect(await second.find({ type: 'Text', text: /^running$/ })).toBeUndefined()
-  expect((await second.find({ type: 'Text', text: /^1\.5k tokens/ }))?.text).toMatch(/^1\.5k tokens · \d+s · \$0\.65$/)
+  // 2000 + 20000 + 1000000 + 100000 tokens; the turn.complete usage adds nothing more.
+  expect((await second.find({ type: 'Text', text: /^1\.1M tokens/ }))?.text).toMatch(/^1\.1M tokens · \d+s · \$0\.65$/)
 
   const modRows = (await second.findAll({ type: 'Text', text: /^(close-gate|goal-meter|session-panel|other)$/ })).map(one => one.text)
   expect(modRows).toEqual(['close-gate', 'goal-meter'])

@@ -44,5 +44,6 @@ Run `/verify on` to enable them again.
 - Run `/waste` to inspect today's repeated commands.
 - Run `/ship list` to see output files recorded in the current session.
 - Run `/radar` if you have the external session registry.
+- Run `/session` in the Code tab of the Claude desktop app to open or close the Session pane.
 
 The [reference](reference/mods.md) explains each command and its limits.
