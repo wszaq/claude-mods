@@ -135,8 +135,19 @@ The pane has five cards. Each card opens or closes with its title, and keeps tha
 
 - **Progress** shows the task list of the Claude Code desktop app (`update_plan`).
   A `wrap_up` call marks all steps as done. Subagent calls do not change the list.
-- **Outputs** lists the files of successful Write, Edit, and NotebookEdit calls, newest first.
-  The list keeps 100 paths. Scratchpad and `/tmp/` files are dim.
+- **Outputs** lists the files that the session made for you, newest first.
+  Files from the main agent and from subagents count. The card adds a file when:
+  - A SendUserFile call sends it, or an Artifact call publishes it.
+  - A Write call creates it. A Write that changes a file from before does not count.
+  - A shell command names it and changes it while the command runs. Only these extensions count:
+    `.pdf`, `.pptx`, `.docx`, `.xlsx`, `.html`, `.png`, `.jpg`, `.mp4`, `.mov`, `.zip`.
+    The card does not examine a command that runs in the background.
+
+  An Edit, a NotebookEdit, or a Write to an old file only moves a listed file to the top.
+  The card does not add the agent's own files. These are scratchpad and `/tmp/` files, hidden
+  files and folders such as `.claude` and `.git`, and files with the session ID in their path.
+
+  A sent or published file is always added. Sent scratchpad files are dim. The list keeps 100 paths.
   A click opens the file in the desktop Files pane. The app opens only files in the working
   directory or a granted folder. Other files show a toast with the reason.
 - **Used** shows one chip for each MCP server, skill, Web search, and Web fetch that the session used.

@@ -83,8 +83,39 @@ const switchSvg = (isOn: boolean) => {
 
 const isScratch = (path: string) => path.includes('/scratchpad/') || path.startsWith('/tmp/')
 
+// Files a command makes count when they have one of these extensions (deliverable-dock's default list).
+const DOCS = new Set(['.pdf', '.pptx', '.docx', '.xlsx', '.html', '.png', '.jpg', '.mp4', '.mov', '.zip'])
+const extOf = (path: string) => {
+  const name = path.split('/').pop() ?? ''
+  return name.lastIndexOf('.') > 0 ? name.slice(name.lastIndexOf('.')).toLowerCase() : ''
+}
+// The words of a command that name a document: `out.pdf`, `--out=out.pdf`, `>out.html`.
+const commandPaths = (command: string) =>
+  (command.match(/"(?:\\.|[^"\\])*"|'[^']*'|[^\s]+/g) ?? [])
+    .map(word => word.replace(/^["']|["']$/g, '').replace(/[;,)]$/, '').replace(/^-[^=]*=|^[<>]+/, ''))
+    .filter(word => DOCS.has(extOf(word)))
+const absolute = (path: string, cwd: string, home: string) => {
+  const full = path.startsWith('~/') ? home + path.slice(1) : path.startsWith('/') ? path : `${cwd}/${path}`
+  const parts: string[] = []
+  for (const part of full.split('/')) {
+    if (part === '..') parts.pop()
+    else if (part && part !== '.') parts.push(part)
+  }
+  return '/' + parts.join('/')
+}
+
 export const register: Register = on => {
+  let sessionId = ''
+  let cwd = '/'
+  let home = ''
+  // The agent's own working files: scratch and temp files, hidden files and folders (.claude memory,
+  // .git), and files named after this session (its activity log). Outputs leaves them out.
+  const isOwn = (path: string) => isScratch(path) || /\/\.[^/.]/.test(path) || (sessionId !== '' && path.includes(sessionId))
+
   on('session.start', async ($, e, next) => {
+    cwd = e.cwd
+    sessionId = await $.session.id().catch(() => '')
+    home = (await $.env.get('HOME').catch(() => undefined)) ?? ''
     await $.command.register({ name: 'session', description: 'Show or hide the Session pane' })
     const saved = (await $.store.get('collapsed').catch(() => undefined)) as Collapsed | undefined
     if (saved) await update($, collapsed, () => ({ ...OPEN, ...saved }))
@@ -122,6 +153,7 @@ export const register: Register = on => {
       }
       await update($, agents, list => [...list, row].slice(-50)).catch(() => undefined)
     }
+    const startedAt = Date.now()
     const ran = await next(e)
     if (isAgent) {
       // A background agent answers at once without totals; turn.complete fills them in later.
@@ -146,10 +178,36 @@ export const register: Register = on => {
       } else if (e.tool === WRAP_TOOL && !e.agentId) {
         await update($, steps, list => list.map(step => ({ ...step, status: 'completed' as const })))
       }
+      // Outputs lists the files made for the person: handed over, created by Write, or made by a command.
+      // An edit only moves a listed file to the top.
+      const record = (path: string, mayAdd: boolean) =>
+        update($, outputs, list =>
+          !mayAdd && !list.some(one => one.path === path)
+            ? list
+            : [{ path, isScratch: isScratch(path) }, ...list.filter(one => one.path !== path)].slice(0, 100),
+        )
+      const result = (ran.result ?? {}) as { type?: string; attachments?: { path?: string }[]; backgroundTaskId?: string }
       const key = FILE_TOOLS[String(e.tool)]
       const path = key ? args[key] : undefined
       if (typeof path === 'string') {
-        await update($, outputs, list => [{ path, isScratch: isScratch(path) }, ...list.filter(one => one.path !== path)].slice(0, 100))
+        await record(path, e.tool === 'Write' && result.type === 'create' && !isOwn(path))
+      }
+      if (e.tool === 'SendUserFile') {
+        const sent = result.attachments?.map(one => one.path) ?? []
+        for (const one of sent.length > 0 ? sent : Array.isArray(args.files) ? args.files : []) {
+          if (typeof one === 'string') await record(absolute(one, cwd, home), true)
+        }
+      }
+      if (e.tool === 'Artifact' && typeof args.file_path === 'string' && (args.action ?? 'publish') === 'publish' && args.asset !== true) {
+        await record(absolute(args.file_path, cwd, home), true)
+      }
+      if (e.tool === 'Bash' && !result.backgroundTaskId) {
+        for (const word of commandPaths(String(args.command ?? ''))) {
+          const one = absolute(word, cwd, home)
+          if (isOwn(one)) continue
+          const stat = await $.fs.stat(one).catch(() => undefined)
+          if (stat?.kind === 'file' && stat.mtimeMs >= startedAt) await record(one, true)
+        }
       }
       const chip = chipOf(args)
       if (chip) await update($, used, list => (list.includes(chip) ? list : [...list, chip]))
@@ -275,7 +333,7 @@ export const register: Register = on => {
           'outputs',
           'Outputs',
           fileList.length === 0 ? (
-            <Text dimColor>No files written yet.</Text>
+            <Text dimColor>No files made for you yet.</Text>
           ) : (
             fileList.map(file => (
               <Button key={`file-${file.path}`} plain onPress={open(file.path)}>

@@ -25,6 +25,7 @@ test('the three cards follow the session', async ($, on) => {
       ? { result: { agentId: 'bg1', content: [] } }
       : { result: { agentId: 'a1', resolvedModel: 'claude-haiku-5-5', totalTokens: 12345, totalDurationMs: 65000, totalToolUseCount: 3, content: [] } },
   )
+  on('tool.call', { tool: 'Write' }, (_, e) => ({ result: { type: e.content === 'x' ? 'create' : 'update' } }))
   on('tool.call', () => ({ result: {} }))
   on('turn.complete', (_, e) => ({ text: e.answer, reason: 'answer' as const }))
   const ran: string[] = []
@@ -76,7 +77,7 @@ test('the three cards follow the session', async ($, on) => {
   const first = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect(await marks(first)).toEqual(['✓', '●', '○'])
   const files = (await first.findAll({ type: 'Text', text: /\.(md|txt)$/ })).map(one => one.text)
-  expect(files).toEqual(['notes.md', 'tmp.txt'])
+  expect(files).toEqual(['notes.md'])
   const chips = (await first.findAll({ type: 'Text', text: /^(ask-me|Web search|gmail|ccd_view)$/ })).map(one => one.text)
   expect(chips).toEqual(['ask-me', 'Web search', 'gmail'])
   expect((await first.find({ type: 'Text', text: /Scan the vault/ }))?.text).toBe('Scan the vault')
@@ -120,6 +121,51 @@ test('the three cards follow the session', async ($, on) => {
     await ui.press({ key: 'toggle-used' })
     expect(await ui.find({ type: 'Text', text: /gmail/ })).toBeUndefined()
     await ui.press({ key: 'toggle-used' })
+    await ui.unmount()
+  }
+})
+
+test('Outputs lists the files made for the person, not edits or the agent own files', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'session' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.id', () => ({ value: 'abc123-session' }))
+  on('env.get', () => ({ value: '/home/me' }))
+  on('command.list', () => ({ value: [] }))
+  on('store.get', () => ({ value: undefined }))
+  on('settings.read', () => ({ value: {} }))
+  on('tool.call', { tool: 'Write' }, (_, e) => ({ result: { type: e.content === 'old' ? 'update' : 'create' } }))
+  on('tool.call', { tool: 'SendUserFile' }, (_, e) => ({ result: { attachments: e.files.map(path => ({ path, size: 1, isImage: true })) } }))
+  on('tool.call', () => ({ result: {} }))
+  // On disk: old.pdf is older than the command, the other documents are new, the rest is missing.
+  on('fs.stat', (_, e) => {
+    if (!/\.(pdf|docx)$/.test(e.path)) throw new Error('ENOENT')
+    return { value: { kind: 'file' as const, size: 1, mtimeMs: e.path.endsWith('old.pdf') ? 0 : Date.now(), isLink: false } }
+  })
+
+  await $.session.start({ cwd: '/work/proj', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'Write', file_path: '/work/proj/report.md', content: 'x' })
+  await $.tool.call({ tool: 'Edit', file_path: '/work/proj/README.md', old_string: 'a', new_string: 'b' })
+  await $.tool.call({ tool: 'Write', file_path: '/work/proj/CHANGELOG.md', content: 'old' })
+  await $.tool.call({ tool: 'Write', file_path: '/work/proj/_COWORK/sessions/abc123-session.md', content: 'x' })
+  await $.tool.call({ tool: 'Write', file_path: '/home/me/.claude/projects/p/memory/note.md', content: 'x' })
+  await $.tool.call({ tool: 'Write', file_path: '/work/proj/.gitignore', content: 'x' })
+  await $.tool.call({ tool: 'Write', file_path: '/tmp/claude-1000/p/abc123-session/scratchpad/draft.md', content: 'x' })
+  await $.tool.call({ tool: 'SendUserFile', files: ['/tmp/claude-1000/p/abc123-session/scratchpad/chart.png'], status: 'normal' })
+  await $.tool.call({ tool: 'Artifact', file_path: 'site/index.html' })
+  await $.tool.call({ tool: 'Bash', command: 'python render.py --out=out/report.pdf old.pdf' })
+  await $.tool.call({ tool: 'Bash', command: 'pandoc report.md -o ~/Downloads/brief.docx' })
+  await $.tool.call({ tool: 'Write', file_path: '/work/proj/research.md', content: 'x', agentId: 'a1' })
+  await $.tool.call({ tool: 'Edit', file_path: '/work/proj/report.md', old_string: 'a', new_string: 'b' })
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    const names = (await ui.findAll({ type: 'Text', text: /\.(md|pdf|docx|html|png|gitignore)$/ })).map(one => one.text)
+    expect(names).toEqual(['report.md', 'research.md', 'brief.docx', 'report.pdf', 'index.html', 'chart.png'])
+    expect((await ui.find({ type: 'Text', text: 'chart.png' }))?.props.dimColor).toBe(true)
+    expect((await ui.find({ type: 'Text', text: 'report.pdf' }))?.props.dimColor).toBe(false)
+    expect((await ui.find({ type: 'Text', text: 'proj/site' }))?.text).toBe('proj/site')
+    expect((await ui.find({ type: 'Text', text: 'me/Downloads' }))?.text).toBe('me/Downloads')
     await ui.unmount()
   }
 })

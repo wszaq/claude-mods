@@ -1,6 +1,6 @@
 {
   "name": "session-panel",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Session pane with Progress, Outputs, Used, Subagents and Mods cards",
   "types": "./types/index.d.ts",
   "author": {
