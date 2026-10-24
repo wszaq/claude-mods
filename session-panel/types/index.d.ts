@@ -12,6 +12,8 @@ declare module 'claude-code' {
       outputs: Output[]
       used: string[]
       agents: Agent[]
+      // USD per subagent id, summed over its model calls; null once a call had a model without a price.
+      spend: Record<string, number | null>
       mods: Mod[]
       collapsed: Collapsed
     }

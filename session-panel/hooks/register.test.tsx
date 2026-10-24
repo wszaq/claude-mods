@@ -1,3 +1,4 @@
+import type { TurnUsage } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 
 const PANE = {
@@ -23,9 +24,22 @@ test('the three cards follow the session', async ($, on) => {
   on('tool.call', { tool: 'Agent' }, (_, e) =>
     e.description === 'Background scan'
       ? { result: { agentId: 'bg1', content: [] } }
-      : { result: { agentId: 'a1', resolvedModel: 'claude-haiku-5-5', totalTokens: 12345, totalDurationMs: 65000, totalToolUseCount: 3, content: [] } },
+      : e.description === 'Odd model'
+        ? { result: { agentId: 'a2', resolvedModel: 'claude-mystery-9', totalTokens: 2000, totalDurationMs: 3000, totalToolUseCount: 1, content: [] } }
+        : { result: { agentId: 'a1', resolvedModel: 'claude-haiku-5-5', totalTokens: 12345, totalDurationMs: 65000, totalToolUseCount: 3, content: [] } },
   )
   on('tool.call', { tool: 'Write' }, (_, e) => ({ result: { type: e.content === 'x' ? 'create' : 'update' } }))
+  // One model call per step: the stand-in answers each with the usage the test gives it.
+  const usages: Record<string, TurnUsage> = {}
+  on('turn.step', async function* (_, e) {
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' as const, usage: usages[e.turnId] ?? null }
+  })
+  const step = async (turnId: string, usage: TurnUsage, agentId?: string) => {
+    usages[turnId] = usage
+    const stream = $.turn.step({ turnId, index: 0, model: usage.model, messageCount: 1, agentId })
+    for await (const _ of stream);
+    return stream.result
+  }
   on('tool.call', () => ({ result: {} }))
   on('turn.complete', (_, e) => ({ text: e.answer, reason: 'answer' as const }))
   const ran: string[] = []
@@ -69,7 +83,16 @@ test('the three cards follow the session', async ($, on) => {
   await $.tool.call({ tool: 'WebSearch', query: 'x', mode: 'standard' })
   await $.tool.call({ tool: 'mcp__gmail__search', q: 'x' })
   await $.tool.call({ tool: 'mcp__ccd_view__show_pane', pane: 'diff' })
+  // A foreground agent's model calls come before its tool.call result names it.
+  // 61K prompt: 1000×0.10 + 10000×0.125 + 50000×0.01 + 2000×0.50 = $0.00285.
+  await step('s1', { model: 'claude-haiku-5-5', input_tokens: 1000, output_tokens: 2000, cache_read_input_tokens: 50000, cache_creation_input_tokens: 10000 }, 'a1')
+  // 150K prompt, the 5x rate: 150000×0.05 + 4000×2.50 = $0.0175. Total $0.02035 (at the base rate: $0.00635).
+  await step('s2', { model: 'claude-haiku-5-5', input_tokens: 0, output_tokens: 4000, cache_read_input_tokens: 150000, cache_creation_input_tokens: 0 }, 'a1')
+  // The main loop's calls are no subagent's.
+  await step('m1', { model: 'claude-opus-5-5', input_tokens: 1000000, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 })
   await $.tool.call({ tool: 'Agent', description: 'Scan the vault', subagent_type: 'Explore', prompt: 'x' })
+  await $.tool.call({ tool: 'Agent', description: 'Odd model', prompt: 'x' })
+  await step('o1', { model: 'claude-mystery-9', input_tokens: 1000, output_tokens: 1000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }, 'a2')
 
   const marks = async (ui: { findAll: (q: object) => Promise<{ text?: string }[]> }) =>
     (await ui.findAll({ type: 'Text', text: /^[✓●○]$/ })).map(one => one.text).slice(0, 3) // the Progress card is first; Mods knobs use ● too
@@ -82,7 +105,9 @@ test('the three cards follow the session', async ($, on) => {
   expect(chips).toEqual(['ask-me', 'Web search', 'gmail'])
   expect((await first.find({ type: 'Text', text: /Scan the vault/ }))?.text).toBe('Scan the vault')
   expect((await first.find({ type: 'Text', text: /haiku/ }))?.text).toBe('haiku-5-5')
-  expect((await first.find({ type: 'Text', text: /tokens/ }))?.text).toBe('12.3k tokens · 1m 5s')
+  expect((await first.find({ type: 'Text', text: /^12\.3k tokens/ }))?.text).toBe('12.3k tokens · 1m 5s · $0.02')
+  // A model without a price shows no price.
+  expect((await first.find({ type: 'Text', text: /^2\.0k tokens/ }))?.text).toBe('2.0k tokens · 3s')
   await first.unmount()
 
   // A background agent: the launch has no totals, its turn.complete brings them.
@@ -90,10 +115,12 @@ test('the three cards follow the session', async ($, on) => {
   const running = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect((await running.find({ type: 'Text', text: /^running$/ }))?.text).toBe('running')
   await running.unmount()
+  // 2000×2 + 100000×2.50 + 1000000×0.20 + 20000×10 = $0.654.
+  await step('b1', { model: 'claude-sonnet-5-5', input_tokens: 2000, output_tokens: 20000, cache_read_input_tokens: 1000000, cache_creation_input_tokens: 100000 }, 'bg1')
   await $.turn.complete({ answer: 'ok', durationMs: 2000, isAborted: false, turnId: 't1', agentId: 'bg1', reason: 'answer', usage: { model: 'claude-haiku-5-5', input_tokens: 1000, output_tokens: 500, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } })
   const second = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect(await second.find({ type: 'Text', text: /^running$/ })).toBeUndefined()
-  expect((await second.find({ type: 'Text', text: /^1\.5k tokens/ }))?.text).toMatch(/^1\.5k tokens · \d+s$/)
+  expect((await second.find({ type: 'Text', text: /^1\.5k tokens/ }))?.text).toMatch(/^1\.5k tokens · \d+s · \$0\.65$/)
 
   const modRows = (await second.findAll({ type: 'Text', text: /^(close-gate|goal-meter|session-panel|other)$/ })).map(one => one.text)
   expect(modRows).toEqual(['close-gate', 'goal-meter'])

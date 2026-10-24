@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, RenderChildren } from 'claude-code'
+import type { EngineInterface, Register, RenderChildren, TurnUsage } from 'claude-code'
 
 import type { Agent, Card, Collapsed, Mod, Output, Step } from '../types'
 
@@ -9,6 +9,7 @@ const steps = atom({ plugin: 'session-panel', key: 'steps' } as const, [] as Ste
 const outputs = atom({ plugin: 'session-panel', key: 'outputs' } as const, [] as Output[])
 const used = atom({ plugin: 'session-panel', key: 'used' } as const, [] as string[])
 const agents = atom({ plugin: 'session-panel', key: 'agents' } as const, [] as Agent[])
+const spend = atom({ plugin: 'session-panel', key: 'spend' } as const, {} as Record<string, number | null>)
 const mods = atom({ plugin: 'session-panel', key: 'mods' } as const, [] as Mod[])
 const OPEN: Collapsed = { progress: false, outputs: false, used: false, subagents: false, mods: false }
 const collapsed = atom({ plugin: 'session-panel', key: 'collapsed' } as const, OPEN)
@@ -55,6 +56,33 @@ const chipOf = (e: Record<string, unknown>): string | undefined => {
 const shortModel = (model: string) => model.replace(/^claude-/, '').replace(/-\d{8}$/, '')
 const kTokens = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
 const duration = (ms: number) => (ms >= 60000 ? `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s` : `${Math.round(ms / 1000)}s`)
+
+// API list prices, USD per million tokens: input, output, cache read (the claude-api skill, 2026-10-06).
+// A cache write costs 1.25x input: subagents write the 5-minute cache, not the 1-hour one.
+const PRICES: Record<string, [number, number, number]> = {
+  'fable-5-1': [10, 50, 0.25],
+  'opus-5-5': [4, 20, 0.2],
+  'opus-5': [5, 25, 0.5],
+  'sonnet-5-5': [2, 10, 0.2],
+  'sonnet-5': [2, 10, 0.2],
+  'haiku-5-5': [0.1, 0.5, 0.01],
+  'haiku-4-5': [1, 5, 0.1],
+}
+
+// What one model call cost in USD; undefined for a model without a price.
+const priceOf = (usage: TurnUsage) => {
+  const model = shortModel(usage.model)
+  const rates = PRICES[model]
+  if (!rates) return undefined
+  // Haiku 5.5 costs 5x for a prompt over 100K tokens.
+  const prompt = usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
+  const scale = model === 'haiku-5-5' && prompt > 100000 ? 5 : 1
+  const [input, output, read] = rates
+  const cost = usage.input_tokens * input + usage.cache_creation_input_tokens * input * 1.25 + usage.cache_read_input_tokens * read + usage.output_tokens * output
+  return (cost * scale) / 1e6
+}
+// The price at the end of a Subagents line; none while it is unknown.
+const priceText = (usd?: number | null) => (typeof usd !== 'number' ? '' : usd < 0.01 ? ' · <$0.01' : ` · $${usd.toFixed(2)}`)
 
 const MARKETS = ['@claude-mods', '@nateherk-mods']
 
@@ -218,6 +246,22 @@ export const register: Register = on => {
     return ran
   })
 
+  // Each model call of a subagent adds its price. A foreground agent's calls come before its
+  // tool.call learns the agent's id, so the price is kept by id and joined when the pane draws.
+  on('turn.step', async function* ($, e, next) {
+    const step = yield* next(e)
+    const agentId = e.agentId
+    if (agentId && step.usage) {
+      const cost = priceOf(step.usage)
+      await update($, spend, all => {
+        const sum = all[agentId]
+        return { ...all, [agentId]: sum === null || cost === undefined ? null : (sum ?? 0) + cost }
+      }).catch(() => undefined)
+    }
+
+    return step
+  })
+
   // A background agent's turns end here: add their tokens and time to its row.
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
@@ -306,6 +350,7 @@ export const register: Register = on => {
     const fileList = await read($, outputs)
     const chipList = await read($, used)
     const agentList = await read($, agents)
+    const spent = await read($, spend)
     const modList = await read($, mods)
     const most = Math.max(1, ...agentList.map(one => one.tokens))
 
@@ -373,7 +418,7 @@ export const register: Register = on => {
                   <Text dimColor>{one.model ? shortModel(one.model) : '…'}</Text>
                 </Box>
                 <Text dimColor>
-                  {one.isDone ? `${kTokens(one.tokens)} tokens · ${duration(one.ms)}` : 'running'}
+                  {one.isDone ? `${kTokens(one.tokens)} tokens · ${duration(one.ms)}${priceText(spent[one.agentId ?? ''])}` : 'running'}
                 </Text>
                 <Box flexDirection="row" height={1}>
                   <Box width={`${Math.max(2, Math.round((one.tokens / most) * 100))}%`} backgroundColor={one.isDone ? 'suggestion' : 'inactive'} />
