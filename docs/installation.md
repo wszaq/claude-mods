@@ -35,10 +35,10 @@ Install one mod:
 claude plugin install verify-gate@claude-mods
 ```
 
-Or install all five mods:
+Or install all six mods:
 
 ```bash
-for mod in close-gate waste-alarm verify-gate peer-radar deliverable-dock; do
+for mod in close-gate waste-alarm verify-gate peer-radar deliverable-dock session-panel; do
   claude plugin install "$mod@claude-mods"
 done
 ```
@@ -78,7 +78,7 @@ claude plugin marketplace update claude-mods
 Update each installed mod:
 
 ```bash
-for mod in close-gate waste-alarm verify-gate peer-radar deliverable-dock; do
+for mod in close-gate waste-alarm verify-gate peer-radar deliverable-dock session-panel; do
   claude plugin update "$mod@claude-mods"
 done
 ```

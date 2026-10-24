@@ -122,6 +122,29 @@ The pane also offers Reveal and Copy path.
 The band offers ship (`s`), open (`o`), and dismiss (`n`).
 Ship means a local copy. It does not upload or email the file.
 
+## session-panel
+
+| Command | Result |
+| --- | --- |
+| `/session` | Open or close the Session pane |
+
+The pane opens at session start. A pane that opens without a command needs a wide window.
+In a narrow window, run `/session`.
+
+The pane has three cards. Each card opens or closes with its title, and keeps that state across sessions.
+
+- **Progress** shows the task list of the Claude Code desktop app (`update_plan`).
+  A `wrap_up` call marks all steps as done. Subagent calls do not change the list.
+- **Outputs** lists the files of successful Write, Edit, and NotebookEdit calls, newest first.
+  The list keeps 100 paths. Scratchpad and `/tmp/` files are dim.
+  A click opens the file in the desktop Files pane. The app opens only files in the working
+  directory or a granted folder. Other files show a toast with the reason.
+- **Used** shows one chip for each MCP server, skill, Web search, and Web fetch that the session used.
+  The card does not show app servers (`ccd_*`) or servers that have an ID as their name.
+
+The pane shows only the current session. It does not read other sessions or the transcript file.
+It starts empty after the mod loads, because it counts only tool calls that it sees.
+
 ---
 
 Canonical source: [docs/reference/mods.md](https://github.com/wszaq/claude-mods/blob/main/docs/reference/mods.md).

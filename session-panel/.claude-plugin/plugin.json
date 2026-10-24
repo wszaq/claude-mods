@@ -1,0 +1,9 @@
+{
+  "name": "session-panel",
+  "version": "0.1.0",
+  "description": "Session pane with Progress, Outputs and Used cards",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "wszaq"
+  }
+}

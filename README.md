@@ -1,6 +1,6 @@
 # claude-mods
 
-Five Claude Code function-hook plugins for local development on macOS and Linux.
+Six Claude Code function-hook plugins for local development on macOS and Linux.
 A mod observes session events and adds commands, status text, or a user interface.
 
 | Mod | Purpose | Command |
@@ -10,12 +10,14 @@ A mod observes session events and adds commands, status text, or a user interfac
 | verify-gate | Run repository checks after a turn that edits files | `/verify` |
 | peer-radar | Show optional local and SSH peer session boards and repository sync state | `/radar`, `/relay` |
 | deliverable-dock | Record output files and copy a selected file to Downloads | `/ship` |
+| session-panel | Show the task list, written files, and used connectors in one pane | `/session` |
 
 ## Start
 
 Use Claude Code with function-hook support. Version 2.1.295 passed the repository tests.
 Version 2.1.293 or later supports the verify-gate failure note through `session.append`.
 These plugins use the `claude-code` runtime API. They do not run in Codex or Claude Desktop.
+The exception is `session-panel`: it draws its pane in the Code tab of the Claude desktop app.
 
 ```bash
 git clone https://github.com/wszaq/claude-mods.git
@@ -31,7 +33,7 @@ Follow [Installation](docs/installation.md) to install the other mods or update 
 
 - [Installation and updates](docs/installation.md)
 - [Usage tutorial](docs/usage.md)
-- [Reference for all five mods](docs/reference/mods.md)
+- [Reference for all six mods](docs/reference/mods.md)
 - [Architecture and local data](docs/architecture.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [GitHub Wiki](https://github.com/wszaq/claude-mods/wiki)
@@ -60,7 +62,7 @@ See [the reference](docs/reference/mods.md) before you enable an integration.
 Run the deterministic checks from the repository root:
 
 ```bash
-for mod in close-gate waste-alarm verify-gate peer-radar deliverable-dock; do
+for mod in close-gate waste-alarm verify-gate peer-radar deliverable-dock session-panel; do
   claude plugin validate "$mod" || exit 1
   claude plugin test "$mod" || exit 1
 done
