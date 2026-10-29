@@ -14,7 +14,7 @@ A mod observes session events and adds commands, status text, or a user interfac
 
 ## Start
 
-Use Claude Code with function-hook support. Version 2.1.295 passed the repository tests.
+Use Claude Code with function-hook support. Version 2.1.311 passed the repository tests.
 Version 2.1.293 or later supports the verify-gate failure note through `session.append`.
 These plugins use the `claude-code` runtime API. They do not run in Codex or Claude Desktop.
 The exception is `session-panel`: it draws its pane in the Code tab of the Claude desktop app.

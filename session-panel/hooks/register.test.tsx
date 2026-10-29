@@ -64,7 +64,8 @@ test('the three cards follow the session', async ($, on) => {
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
   const enabled: Record<string, boolean> = { 'close-gate@claude-mods': true, 'goal-meter@nateherk-mods': false, 'session-panel@claude-mods': true, 'other@elsewhere': true }
-  on('settings.read', () => ({ value: { ...enabled } }))
+  // settings.read hooks answer the whole settings object; the engine picks the key (2.1.311).
+  on('settings.read', () => ({ value: { enabledPlugins: { ...enabled } } }))
   on('clock.sleep', () => ({ value: undefined }))
 
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
