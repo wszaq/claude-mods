@@ -127,7 +127,7 @@ test('the three cards follow the session', async ($, on) => {
   expect(await marks(first)).toEqual(['✓', '●', '○'])
   // The header above Progress: this chat's critter in the color of its file, the state and the steps done.
   expect(colorReads).toContain('/home/me/.claude/mods-data/chat-colors/sess-1.json')
-  expect(await avatars(first, 'desktop')).toEqual([BLUE, TEAL, GRAY, TEAL])
+  expect(await avatars(first, 'desktop')).toEqual([BLUE, TEAL, GRAY, TEAL, '#F08A5D', '#7FC8A9'])
   expect((await first.find({ type: 'Text', text: 'Blue chat · working' }))?.text).toBe('Blue chat · working')
   expect((await first.find({ type: 'Text', text: '1 of 3 steps' }))?.text).toBe('1 of 3 steps')
   const files = (await first.findAll({ type: 'Text', text: /\.(md|txt)$/ })).map(one => one.text)
@@ -167,11 +167,11 @@ test('the three cards follow the session', async ($, on) => {
   const lines = async () =>
     (await second.findAll({ type: 'Svg' }))
       .filter(one => one.props.alt === 'on' || one.props.alt === 'off') // the avatars are Svgs too
-      .map(one => String(one.props.source).match(/stroke="(#[0-9a-f]+)"/)?.[1])
-  expect(await lines()).toEqual(['#22c55e', '#22c55e'])
+      .map(one => String(one.props.source).match(/<rect[^>]*fill="(#[0-9A-Fa-f]{6})"/)?.[1]) // the track
+  expect(await lines()).toEqual(['#4EBA65', '#4EBA65'])
   await second.press({ key: 'mod-goal-meter@nateherk-mods' })
   expect((await second.find({ type: 'Text', text: /^still loaded here$/ }))?.text).toBe('still loaded here')
-  expect(await lines()).toEqual(['#22c55e', '#ef4444'])
+  expect(await lines()).toEqual(['#4EBA65', '#3A3A3C'])
   await second.unmount()
 
   await $.tool.call({ tool: PLAN, done: [2], start: 3 })
@@ -181,15 +181,14 @@ test('the three cards follow the session', async ($, on) => {
     expect(await marks(ui)).toEqual(['✓', '✓', '●'])
     expect((await ui.find({ type: 'Text', text: 'Blue chat · working' }))?.text).toBe('Blue chat · working')
     expect((await ui.find({ type: 'Text', text: '2 of 3 steps' }))?.text).toBe('2 of 3 steps')
-    // The chat's critter, then the subagents': haiku teal, an unknown model gray.
-    expect(await avatars(ui, surface)).toEqual([BLUE, TEAL, GRAY, TEAL, TEAL])
+    // The chat's critter, the subagents' (haiku teal, an unknown model gray), then one per mod in list order.
+    expect(await avatars(ui, surface)).toEqual([BLUE, TEAL, GRAY, TEAL, TEAL, '#F08A5D', '#7FC8A9'])
     // The own cards' titles take the chat color; the borders and the ✓ ● ○ marks keep theirs.
     for (const title of ['Progress', 'Outputs', 'Used', 'Subagents', 'Mods']) {
       expect((await ui.find({ type: 'Text', text: new RegExp(`^${title}$`) }))?.props.color).toBe(BLUE)
     }
-    // Each mod has a ● in a color of its own, picked by its id from the mod palette (the Progress ● is a theme color, the knob has none).
-    const hexes = (await ui.findAll({ type: 'Text', text: '●' })).map(one => one.props.color).filter(color => String(color).startsWith('#'))
-    expect(hexes).toEqual([GRAY, '#5E9BD6']) // close-gate@claude-mods, goal-meter@nateherk-mods
+    // Each mod's critter has a color of its own, by list order, so no two mods share one.
+    if (surface === 'desktop') expect((await ui.findAll({ type: 'Svg' })).filter(one => one.props.alt === 'close-gate').length).toBe(1)
     expect((await ui.find({ type: 'Text', text: /notes\.md/ }))?.text).toBe('notes.md')
     expect((await ui.find({ type: 'Text', text: /gmail/ }))?.text).toBe('gmail')
 

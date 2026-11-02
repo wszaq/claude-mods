@@ -106,8 +106,11 @@ const familyColor = (model: string) => {
 }
 
 // A mod's mark: its id picks a color by the algorithm of hashColor, over a palette of its own.
-const MOD_COLORS = ['#3BA596', '#5E9BD6', '#D9677C', '#E3A33B', '#8F8D88', '#3FA9C9']
-const modColor = (id: string) => MOD_COLORS[hashColor(id) % MOD_COLORS.length] ?? PAL.gray
+// By list order, so no two mods share a color (none of these is a chat or a model color).
+const MOD_COLORS = ['#F08A5D', '#7FC8A9', '#C9A0DC', '#6C8EBF', '#D4B483', '#E07A9B', '#8AB17D', '#B5838D', '#5FB3B3', '#A3A380']
+const modColor = (index: number) => MOD_COLORS[index % MOD_COLORS.length] ?? PAL.gray
+// A mod's critter: working while it applies, asleep when off, waiting when this session lags the setting.
+const modPose = (mod: Mod) => (mod.isBusy ? POSE.working : mod.isOn !== mod.isLoaded ? POSE.waiting : mod.isOn ? {} : POSE.idle)
 
 const MARKETS = ['@claude-mods', '@nateherk-mods']
 
@@ -126,12 +129,12 @@ const loadMods = async ($: EngineInterface, busy?: string) => {
 }
 
 // The Mods switch as one drawing: a thick line that touches its knob, green on, red off.
+// A pill switch: a green track with the knob right when on, a dark gray track with the knob left when off.
 const switchSvg = (isOn: boolean) => {
-  const line = isOn
-    ? '<line x1="2" y1="8" x2="22" y2="8" stroke="#22c55e" stroke-width="4" stroke-linecap="round"/>'
-    : '<line x1="14" y1="8" x2="34" y2="8" stroke="#ef4444" stroke-width="4" stroke-linecap="round"/>'
-  const knob = `<circle cx="${isOn ? 28 : 8}" cy="8" r="7" fill="${isOn ? '#ececec' : '#8a8a8a'}"/>`
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="16" viewBox="0 0 36 16">${line}${knob}</svg>`
+  const track = `<rect x="1" y="1" width="38" height="20" rx="10" fill="${isOn ? '#4EBA65' : '#3A3A3C'}" stroke="${isOn ? '#3F9E54' : '#5A5A5E'}"/>`
+  const knob = `<circle cx="${isOn ? 29 : 11}" cy="11" r="8" fill="#FFFFFF" filter="url(#s)"/>`
+  const shadow = '<defs><filter id="s" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="1" stdDeviation="0.8" flood-opacity=".35"/></filter></defs>'
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="22" viewBox="0 0 40 22">${shadow}${track}${knob}</svg>`
 }
 
 const isScratch = (path: string) => path.includes('/scratchpad/') || path.startsWith('/tmp/')
@@ -495,10 +498,10 @@ export const register: Register = on => {
             <Text dimColor>No mods from claude-mods or nateherk-mods.</Text>
           ) : (
             [
-              ...modList.map(mod => (
+              ...modList.map((mod, index) => (
                 <Box key={`row-${mod.id}`} flexDirection="row" justifyContent="space-between" gap={1}>
-                  <Box flexDirection="row" gap={1} flexShrink={1}>
-                    <Text color={modColor(mod.id)}>●</Text>
+                  <Box flexDirection="row" gap={1} flexShrink={1} alignItems="center">
+                    {critter(elements, e.surface, modColor(index), modPose(mod), 16, mod.id.split('@')[0] ?? mod.id)}
                     <Text dimColor={!mod.isOn} wrap="truncate-end">{mod.id.split('@')[0]}</Text>
                   </Box>
                   <Box flexDirection="row" alignItems="center" flexShrink={0}>
@@ -510,7 +513,7 @@ export const register: Register = on => {
                     {Svg ? (
                       // A Button holds only text, so the drawing sits under a blank Button laid over it.
                       <Box position="relative" width={5}>
-                        <Svg source={switchSvg(mod.isOn)} alt={mod.isOn ? 'on' : 'off'} width={36} height={16} />
+                        <Svg source={switchSvg(mod.isOn)} alt={mod.isOn ? 'on' : 'off'} width={40} height={22} />
                         <Box position="absolute" top={0} left={0}>
                           <Button key={`mod-${mod.id}`} plain onPress={flip(mod)} label="     " />
                         </Box>
