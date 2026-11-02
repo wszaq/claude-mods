@@ -228,6 +228,25 @@ test('headless session does not run an automatic check', async ($, on) => {
   expect(kit.runs.some(run => run.argv[0] === 'git')).toBe(false)
 })
 
+test('desktop attach after a headless start lets an edit run the automatic check', async ($, on) => {
+  const kit = fixture(on, { '/repo/package.json': JSON.stringify({ scripts: { test: 'node test.js' } }) })
+  on('session.attach', ($, e) => ({ clientId: e.clientId }))
+  await $.session.start({ cwd: ROOT, surface: null, isInteractive: false })
+  await editAndFinish($, kit.clock, '/repo/a.ts')
+  expect(kit.spawned).toHaveLength(0)
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
+  await editAndFinish($, kit.clock, '/repo/a.ts')
+  expect(kit.spawned).toEqual([['npm', 'test', '--silent']])
+})
+
+test('a headless start with the desktop already attached runs the automatic check', async ($, on) => {
+  const kit = fixture(on, { '/repo/package.json': JSON.stringify({ scripts: { test: 'node test.js' } }) })
+  on('session.surfaces', () => ({ value: ['desktop'] }))
+  await $.session.start({ cwd: ROOT, surface: null, isInteractive: false })
+  await editAndFinish($, kit.clock, '/repo/a.ts')
+  expect(kit.spawned).toEqual([['npm', 'test', '--silent']])
+})
+
 test('failed check offers log and rerun, keeps MARKER, and adds a footer mode', async ($, on) => {
   const kit = fixture(on, { '/repo/package.json': JSON.stringify({ scripts: { test: 'node test.js' } }) }, 1)
   const opened: string[] = []

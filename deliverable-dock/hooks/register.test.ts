@@ -144,6 +144,43 @@ test('headless session does not record Write or Bash deliverables', async ($, on
   expect(stats).toBe(0)
 })
 
+test('desktop attach after a headless start records a Write and finds the opener', async ($, on) => {
+  mock.clock(on, { now: 200000 })
+  mock.env(on, { HOME: '/home/user' })
+  const calls: string[][] = []
+  on('process.run', ($, e) => {
+    calls.push([...e.argv])
+    return { value: { exitCode: 0, stdout: e.argv[0] === 'uname' ? 'Linux\n' : '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('fs.exists', ($, e) => ({ value: e.path === '/home/user/Downloads' }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.attach', ($, e) => ({ clientId: e.clientId }))
+  on('tool.call', { tool: 'Write' }, ($, e) => ({ result: { type: 'create', filePath: e.file_path, content: e.content, structuredPatch: [], originalFile: null } }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await $.tool.call({ tool: 'Write', file_path: '/work/a.pdf', content: '' })
+  expect((await $.command.run(command())).text).toBe('No deliverables recorded in this session yet.')
+  expect(calls).toEqual([])
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
+  await $.tool.call({ tool: 'Write', file_path: '/work/b.pdf', content: '' })
+  expect((await $.command.run(command())).text).toBe('Shipped b.pdf to Downloads')
+  expect(calls).toContainEqual(['xdg-open', '/home/user/Downloads/b.pdf'])
+})
+
+test('a headless start with the desktop already attached records a Write', async ($, on) => {
+  mock.clock(on, { now: 200000 })
+  mock.env(on, { HOME: '/home/user' })
+  on('process.run', ($, e) => ({ value: { exitCode: 0, stdout: e.argv[0] === 'uname' ? 'Darwin\n' : '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.surfaces', () => ({ value: ['desktop'] }))
+  on('tool.call', { tool: 'Write' }, ($, e) => ({ result: { type: 'create', filePath: e.file_path, content: e.content, structuredPatch: [], originalFile: null } }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await $.tool.call({ tool: 'Write', file_path: '/work/a.pdf', content: '' })
+  const ui = await $.ui.mount({ plugin: 'deliverable-dock', surface: 'desktop', component: 'Pane', requestId: 'deliverable-dock', props: PANE })
+  expect(await ui.find({ text: 'a.pdf' })).toBeDefined()
+})
+
 test('band actions keep MARKER and ship clears the band', async ($, on) => {
   mock.clock(on, { now: 200000 })
   mock.env(on, { HOME: '/home/user' })

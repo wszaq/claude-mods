@@ -214,6 +214,64 @@ test('headless session counts Bash calls without scans, cleanup or toasts', asyn
   expect(cleanup).toBe(0)
 })
 
+test('desktop attach after a headless start scans, cleans up and lets the toast show', async ($, on) => {
+  const clock = mock.clock(on, { now: new Date(2026, 9, 9, 12).getTime() })
+  const stored = new Map<string, unknown>([['counts:2026-10-01', { old: 1 }]])
+  mock.env(on, { HOME: '/home/test' })
+  on('store.get', ($, e) => ({ value: stored.get(e.key) }))
+  on('store.set', ($, e) => { stored.set(e.key, e.value); return { value: undefined } })
+  on('store.keys', () => ({ value: [...stored.keys()] }))
+  on('store.delete', ($, e) => { stored.delete(e.key); return { value: undefined } })
+  let scans = 0
+  let tipRuns = 0
+  const toasts: string[] = []
+  on('fs.exists', () => ({ value: true }))
+  on('process.run', ($, e) => {
+    if (e.argv.includes('scan')) scans++
+    if (e.argv.includes('tips')) tipRuns++
+    return { value: processResult(e.argv[0] === 'uname' ? 'Linux\n' : 'Token Dashboard: no suggestions') }
+  })
+  on('ui.toast', ($, e) => { toasts.push(e.text); return { value: undefined } })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.attach', ($, e) => ({ clientId: e.clientId }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('tool.call', { tool: 'Bash' }, () => shellResult)
+
+  await $.session.start({ cwd: '/home/test', surface: null, isInteractive: false })
+  await clock.advance(30000)
+  for (let i = 0; i < 10; i++) await $.tool.call({ tool: 'Bash', command: 'shared-context save --help' })
+  expect([scans, tipRuns, toasts.length]).toEqual([0, 0, 0])
+  expect(stored.has('counts:2026-10-01')).toBe(true)
+
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
+  await clock.advance(30000)
+  expect([scans, tipRuns]).toEqual([1, 1])
+  expect(stored.has('counts:2026-10-01')).toBe(false)
+  await $.tool.call({ tool: 'Bash', command: 'shared-context save --help' })
+  expect(toasts).toEqual(['waste-alarm: "shared-context save --help" ran 11 times today'])
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:two' })
+  await clock.advance(7200000)
+  expect([scans, tipRuns]).toEqual([2, 2])
+})
+
+test('a headless start with the desktop already attached scans', async ($, on) => {
+  const clock = mock.clock(on, { now: new Date(2026, 9, 9, 12).getTime() })
+  mock.store(on)
+  mock.env(on, { HOME: '/home/test' })
+  let scans = 0
+  on('fs.exists', () => ({ value: true }))
+  on('process.run', ($, e) => {
+    if (e.argv.includes('scan')) scans++
+    return { value: processResult(e.argv[0] === 'uname' ? 'Linux\n' : 'Token Dashboard: no suggestions') }
+  })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.surfaces', () => ({ value: ['desktop'] }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  await $.session.start({ cwd: '/home/test', surface: null, isInteractive: false })
+  await clock.advance(30000)
+  expect(scans).toBe(1)
+})
+
 test('removes old count keys at session start', async ($, on) => {
   mock.clock(on, { now: new Date(2026, 9, 9, 12).getTime() })
   const stored = new Map<string, unknown>([

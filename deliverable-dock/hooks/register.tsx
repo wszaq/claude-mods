@@ -72,6 +72,14 @@ async function chatHex($: EngineInterface): Promise<string> {
   return chatColor(hashColor(id)).hex
 }
 
+// The home folder and the file opener of a session that has a surface. Session start and a surface that
+// attaches later both call it.
+async function detect($: EngineInterface): Promise<{ home: string; opener: string }> {
+  const home = (await $.env.get('HOME')) ?? ''
+  const platform = await $.process.run(['uname', '-s'])
+  return { home, opener: platform.stdout.trim() === 'Linux' ? 'xdg-open' : 'open' }
+}
+
 export const register: Register = (on, options) => {
   const extensions = new Set(String(options.extensions).split(',').map(value => value.trim().toLowerCase()))
   let cwd = ''
@@ -82,13 +90,27 @@ export const register: Register = (on, options) => {
   let interactive = true
 
   on('session.start', async ($, e, next) => {
-    interactive = e.isInteractive !== false
+    // The desktop app drives the engine through the SDK: isInteractive is false there, so a surface also counts.
+    const live = e.isInteractive !== false || (await $.session.surfaces().catch(() => [])).some(surface => surface !== 'terminal')
+    interactive = live
     cwd = e.cwd
     await $.command.register({ name: 'ship', description: 'Copy a deliverable to Downloads and open it' })
-    if (!interactive) return next(e)
-    home = (await $.env.get('HOME')) ?? ''
-    const platform = await $.process.run(['uname', '-s'])
-    opener = platform.stdout.trim() === 'Linux' ? 'xdg-open' : 'open'
+    if (!live) return next(e)
+    const found = await detect($)
+    home = found.home
+    opener = found.opener
+    return next(e)
+  })
+
+  on('session.attach', async ($, e, next) => {
+    if (e.surface !== 'terminal' && !interactive) {
+      try {
+        const found = await detect($)
+        home = found.home
+        opener = found.opener
+        interactive = true
+      } catch { /* Keep the attach available; the next attach tries again. */ }
+    }
     return next(e)
   })
 

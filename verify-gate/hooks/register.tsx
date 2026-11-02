@@ -173,13 +173,19 @@ async function runManual($: EngineInterface): Promise<string> {
 export const register: Register = on => {
   let interactive = true
   on('session.start', async ($, e, next) => {
-    interactive = e.isInteractive !== false
+    // The desktop app drives the engine through the SDK: isInteractive is false there, so a surface also counts.
+    interactive = e.isInteractive !== false || (await $.session.surfaces().catch(() => [])).some(surface => surface !== 'terminal')
     cwd = e.cwd
     try {
       home = await $.env.get('HOME') ?? ''
       platform = (await $.process.run(['uname', '-s'])).stdout.trim()
       await $.command.register({ name: 'verify-gate', description: 'Run or control the repo check.' })
     } catch { /* Verification must not stop the session. */ }
+    return next(e)
+  })
+
+  on('session.attach', ($, e, next) => {
+    if (e.surface !== 'terminal') interactive = true
     return next(e)
   })
 

@@ -84,60 +84,78 @@ async function chatHex($: EngineInterface): Promise<string> {
   return chatColor(hashColor(id)).hex
 }
 
+type Collector = { linux: boolean | null }
+
+async function collect($: EngineInterface, state: Collector) {
+  try {
+    const root = await $.session.root()
+    const sessionId = await $.session.id()
+    const home = await $.env.get('HOME')
+    if (state.linux === null) {
+      const platform = await $.process.run(['uname', '-s'], { timeoutMs: 2000 })
+      state.linux = platform.stdout.trim() === 'Linux'
+    }
+    const gitStatus = await $.process.run(['git', '-C', root, 'status', '--porcelain=v1', '--branch'], { timeoutMs: 3000 }).catch(() => null)
+    const git = gitStatus?.exitCode === 0
+    const parsed = git ? parseGit(gitStatus.stdout) : { changed: 0, ahead: 0, behind: 0 }
+    const trees = git
+      ? await $.process.run(['git', '-C', root, 'worktree', 'list', '--porcelain'], { timeoutMs: 3000 }).catch(() => null)
+      : null
+    const worktrees = trees?.exitCode === 0
+      ? Math.max(0, trees.stdout.split('\n').filter(line => line.startsWith('worktree ')).length - 1)
+      : 0
+    const lsof = await $.process.run(['lsof', '-nP', '-iTCP', '-sTCP:LISTEN'], { timeoutMs: 3000 }).catch(() => null)
+    const ss = state.linux && !lsof
+      ? await $.process.run(['ss', '-ltnp'], { timeoutMs: 3000 }).catch(() => null)
+      : null
+    const ports = lsof?.exitCode === 0 ? parseLsof(lsof.stdout) : ss?.exitCode === 0 ? parseSs(ss.stdout) : []
+    let claim = ''
+    let openItems = 0
+    if (home) {
+      const base = `${home}/.claude/session-claims/${sessionId}`
+      try {
+        const data = JSON.parse(await $.fs.read(`${base}.json`)) as { claim?: unknown }
+        if (typeof data.claim === 'string') claim = data.claim
+      } catch {}
+      try {
+        openItems = countOpenItems(await $.fs.read(`${base}.md`))
+      } catch {}
+    }
+    const at = await $.clock.now()
+    await update($, facts, () => ({ at, ...parsed, worktrees, ports, claim, openItems, git }))
+  } catch {}
+}
+
+// Collect the facts at once and then every minute. Session start and a surface that attaches later both call it.
+function startCollecting($: EngineInterface, state: Collector) {
+  $.clock.after(0, () => { void collect($, state) })
+  $.clock.every(60000, () => { void collect($, state) })
+}
+
 export const register: Register = on => {
   let interactive = true
+  const state: Collector = { linux: null }
   on('session.start', async ($, e, next) => {
-    interactive = e.isInteractive !== false
+    // The desktop app drives the engine through the SDK: isInteractive is false there, so a surface also counts.
+    const live = e.isInteractive !== false || (await $.session.surfaces().catch(() => [])).some(surface => surface !== 'terminal')
+    interactive = live
     await $.tool.register({
       name: 'running_state',
       description: 'Running state of this session for a handoff or a close check: uncommitted and unpushed git changes, worktrees, listening dev ports, the session claim and open items. Call this instead of running git, ps or lsof by hand.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     })
     await $.command.register({ name: 'closeok', description: 'Show the cached close check.' })
-    if (!interactive) return next(e)
+    if (!live) return next(e)
 
-    let linux: boolean | null = null
-    const collect = async () => {
-      try {
-        const root = await $.session.root()
-        const sessionId = await $.session.id()
-        const home = await $.env.get('HOME')
-        if (linux === null) {
-          const platform = await $.process.run(['uname', '-s'], { timeoutMs: 2000 })
-          linux = platform.stdout.trim() === 'Linux'
-        }
-        const gitStatus = await $.process.run(['git', '-C', root, 'status', '--porcelain=v1', '--branch'], { timeoutMs: 3000 }).catch(() => null)
-        const git = gitStatus?.exitCode === 0
-        const parsed = git ? parseGit(gitStatus.stdout) : { changed: 0, ahead: 0, behind: 0 }
-        const trees = git
-          ? await $.process.run(['git', '-C', root, 'worktree', 'list', '--porcelain'], { timeoutMs: 3000 }).catch(() => null)
-          : null
-        const worktrees = trees?.exitCode === 0
-          ? Math.max(0, trees.stdout.split('\n').filter(line => line.startsWith('worktree ')).length - 1)
-          : 0
-        const lsof = await $.process.run(['lsof', '-nP', '-iTCP', '-sTCP:LISTEN'], { timeoutMs: 3000 }).catch(() => null)
-        const ss = linux && !lsof
-          ? await $.process.run(['ss', '-ltnp'], { timeoutMs: 3000 }).catch(() => null)
-          : null
-        const ports = lsof?.exitCode === 0 ? parseLsof(lsof.stdout) : ss?.exitCode === 0 ? parseSs(ss.stdout) : []
-        let claim = ''
-        let openItems = 0
-        if (home) {
-          const base = `${home}/.claude/session-claims/${sessionId}`
-          try {
-            const data = JSON.parse(await $.fs.read(`${base}.json`)) as { claim?: unknown }
-            if (typeof data.claim === 'string') claim = data.claim
-          } catch {}
-          try {
-            openItems = countOpenItems(await $.fs.read(`${base}.md`))
-          } catch {}
-        }
-        const at = await $.clock.now()
-        await update($, facts, () => ({ at, ...parsed, worktrees, ports, claim, openItems, git }))
-      } catch {}
+    startCollecting($, state)
+    return next(e)
+  })
+
+  on('session.attach', ($, e, next) => {
+    if (e.surface !== 'terminal' && !interactive) {
+      interactive = true
+      startCollecting($, state)
     }
-    $.clock.after(0, () => { void collect() })
-    $.clock.every(60000, () => { void collect() })
     return next(e)
   })
 

@@ -126,6 +126,52 @@ test('headless session schedules no collector or remote work', async ($, on) => 
 })
 
 
+test('desktop attach after a headless start begins collection', { options: { peerHost: 'off' } }, async ($, on) => {
+  const clock = mock.clock(on, { now: 600000 })
+  mock.store(on)
+  mock.env(on, { HOME: '/Users/test' })
+  let lists = 0
+  on('process.run', ($, e) => {
+    if (e.argv.includes('--list')) lists++
+    const stdout = e.argv[0] === 'uname' ? 'Darwin\n' : e.argv.includes('--list') ? table : ''
+    return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('fs.exists', () => ({ value: false }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.attach', ($, e) => ({ clientId: e.clientId }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await clock.advance(120000)
+  expect(lists).toBe(0)
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
+  await clock.advance(5000)
+  expect(lists).toBe(1)
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:two' })
+  await clock.advance(120000)
+  expect(lists).toBe(2)
+})
+
+test('a headless start with the desktop already attached begins collection', { options: { peerHost: 'off' } }, async ($, on) => {
+  const clock = mock.clock(on, { now: 600000 })
+  mock.store(on)
+  mock.env(on, { HOME: '/Users/test' })
+  let lists = 0
+  on('process.run', ($, e) => {
+    if (e.argv.includes('--list')) lists++
+    const stdout = e.argv[0] === 'uname' ? 'Darwin\n' : e.argv.includes('--list') ? table : ''
+    return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('fs.exists', () => ({ value: false }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.surfaces', () => ({ value: ['desktop'] }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await clock.advance(5000)
+  expect(lists).toBe(1)
+})
+
 test('default configuration does not contact a peer or fetch personal repositories', async ($, on) => {
   const clock = mock.clock(on, { now: 600000 })
   mock.store(on)

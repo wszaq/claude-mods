@@ -57,61 +57,82 @@ async function chatHex($: EngineInterface): Promise<string> {
   return chatColor(hashColor(id)).hex
 }
 
+type Scanner = { running: boolean }
+
+// One scan of the Token Dashboard repository, then its tips. It skips when a scan is already running.
+async function scan($: EngineInterface, state: Scanner, repo: string, home: string, db: string): Promise<void> {
+  if (state.running) return
+  state.running = true
+  try {
+    await $.process.run(['mkdir', '-p', `${home}/.claude/mods-data/waste-alarm`])
+    const now = await $.clock.now()
+    const lastScan = Number((await $.store.get('lastScan')) ?? 0)
+    if (now < lastScan || now - lastScan >= 6000000) {
+      await $.store.set('lastScan', now)
+      const result = await $.process.run(['python3', `${repo}/cli.py`, 'scan', '--db', db], { timeoutMs: 600000 })
+      if (result.exitCode !== 0) return
+    }
+    const tipResult = await $.process.run(['python3', `${repo}/cli.py`, 'tips', '--db', db], { timeoutMs: 600000 })
+    if (tipResult.exitCode !== 0) return
+    const dismissed = (await $.store.get('dismissed') as string[] | undefined) ?? []
+    const keys = dismissed.map(dismissalKey)
+    await update($, tips, () => parseTips(tipResult.stdout).filter(tip => !keys.includes(dismissalKey(tip.title))))
+  } catch { /* A failed scan leaves the current tips in place. */ }
+  finally { state.running = false }
+}
+
+// The start-up work of a session that has a surface: restore the folds, drop old counts, find the Token
+// Dashboard repository and start the scans. Session start and a surface that attaches later both call it.
+async function startUp($: EngineInterface, state: Scanner, configuredRepo: string): Promise<void> {
+  try {
+    const saved = await $.store.get('collapsed') as Record<string, boolean> | undefined
+    if (saved) await update($, collapsed, () => saved)
+    const cutoff = new Date(await $.clock.now())
+    cutoff.setDate(cutoff.getDate() - 7)
+    const oldest = day(cutoff.getTime())
+    for (const oldKey of await $.store.keys()) {
+      if ((oldKey.startsWith('counts:') || oldKey.startsWith('shown:')) && oldKey.slice(oldKey.indexOf(':') + 1) < oldest) await $.store.delete(oldKey)
+    }
+    const platform = (await $.process.run(['uname', '-s'])).stdout.trim()
+    const home = await $.env.get('HOME')
+    if ((platform === 'Darwin' || platform === 'Linux') && home) {
+      const configured = configuredRepo.replace(/^~/, home)
+      const candidates = configuredRepo ? [configured] : [`${home}/_WAJBKODING/repos/token-dashboard`, `${home}/Work/_WAJBKODING/repos/token-dashboard`]
+      let repo = ''
+      for (const candidate of candidates) {
+        if (await $.fs.exists(`${candidate}/cli.py`)) { repo = candidate; break }
+      }
+      if (repo) {
+        const db = `${home}/.claude/mods-data/waste-alarm/token-dashboard.db`
+        $.clock.after(30000, () => { void scan($, state, repo, home, db) })
+        $.clock.every(7200000, () => { void scan($, state, repo, home, db) })
+      }
+    }
+  } catch { /* This observer must not stop session start. */ }
+}
+
 export const register: Register = (on, options) => {
   let interactive = true
   const threshold = Number(options.threshold ?? 10)
   const configuredRepo = String(options.tokenDashboard ?? '')
-  let scanRunning = false
+  const state: Scanner = { running: false }
 
   on('session.start', async ($, e, next) => {
-    interactive = e.isInteractive !== false
+    // The desktop app drives the engine through the SDK: isInteractive is false there, so a surface also counts.
+    const live = e.isInteractive !== false || (await $.session.surfaces().catch(() => [])).some(surface => surface !== 'terminal')
+    interactive = live
     try {
       await $.command.register({ name: 'waste', description: 'Show repeated commands and token tips', argumentHint: '[ignore <command>|dismiss]' })
-      if (!interactive) return next(e)
-      const saved = await $.store.get('collapsed') as Record<string, boolean> | undefined
-      if (saved) await update($, collapsed, () => saved)
-      const cutoff = new Date(await $.clock.now())
-      cutoff.setDate(cutoff.getDate() - 7)
-      const oldest = day(cutoff.getTime())
-      for (const oldKey of await $.store.keys()) {
-        if ((oldKey.startsWith('counts:') || oldKey.startsWith('shown:')) && oldKey.slice(oldKey.indexOf(':') + 1) < oldest) await $.store.delete(oldKey)
-      }
-      const platform = (await $.process.run(['uname', '-s'])).stdout.trim()
-      const home = await $.env.get('HOME')
-      if ((platform === 'Darwin' || platform === 'Linux') && home) {
-        const configured = configuredRepo.replace(/^~/, home)
-        const candidates = configuredRepo ? [configured] : [`${home}/_WAJBKODING/repos/token-dashboard`, `${home}/Work/_WAJBKODING/repos/token-dashboard`]
-        let repo = ''
-        for (const candidate of candidates) {
-          if (await $.fs.exists(`${candidate}/cli.py`)) { repo = candidate; break }
-        }
-        if (repo) {
-          const db = `${home}/.claude/mods-data/waste-alarm/token-dashboard.db`
-          const scan = async () => {
-            if (scanRunning) return
-            scanRunning = true
-            try {
-              await $.process.run(['mkdir', '-p', `${home}/.claude/mods-data/waste-alarm`])
-              const now = await $.clock.now()
-              const lastScan = Number((await $.store.get('lastScan')) ?? 0)
-              if (now < lastScan || now - lastScan >= 6000000) {
-                await $.store.set('lastScan', now)
-                const result = await $.process.run(['python3', `${repo}/cli.py`, 'scan', '--db', db], { timeoutMs: 600000 })
-                if (result.exitCode !== 0) return
-              }
-              const tipResult = await $.process.run(['python3', `${repo}/cli.py`, 'tips', '--db', db], { timeoutMs: 600000 })
-              if (tipResult.exitCode !== 0) return
-              const dismissed = (await $.store.get('dismissed') as string[] | undefined) ?? []
-              const keys = dismissed.map(dismissalKey)
-              await update($, tips, () => parseTips(tipResult.stdout).filter(tip => !keys.includes(dismissalKey(tip.title))))
-            } catch { /* A failed scan leaves the current tips in place. */ }
-            finally { scanRunning = false }
-          }
-          $.clock.after(30000, () => { void scan() })
-          $.clock.every(7200000, () => { void scan() })
-        }
-      }
+      if (live) await startUp($, state, configuredRepo)
     } catch { /* This observer must not stop session start. */ }
+    return next(e)
+  })
+
+  on('session.attach', async ($, e, next) => {
+    if (e.surface !== 'terminal' && !interactive) {
+      interactive = true
+      await startUp($, state, configuredRepo)
+    }
     return next(e)
   })
 

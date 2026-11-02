@@ -6,9 +6,17 @@ const BAND = {
   scroll: { offset: 0, bodyRows: 2 }, view: {},
 }
 
+// A test sets these to hold session start inside its command.register call and to learn that it got there.
+let hold: Promise<void> | undefined
+let reached: (() => void) | undefined
+let statuses = 0
+
 function base(on: Parameters<typeof mock.clock>[0]) {
+  hold = undefined
+  reached = undefined
+  statuses = 0
   on('tool.register', ($, e) => ({ value: { tool: `mcp__close-gate__${e.name}` } }))
-  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('command.register', async ($, e) => { reached?.(); await hold; return { value: { command: e.name } } })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => $.ui.resolve(e).Text({ children: 'MARKER' }))
   on('prompt.submit', ($, e) => ({ text: e.text, context: e.context }))
@@ -22,6 +30,7 @@ function world(on: Parameters<typeof mock.clock>[0], status: string, items = '',
   on('session.id', () => ({ value: 'session-1' }))
   on('process.run', ($, e) => {
     const command = e.argv[0]
+    if (command === 'git' && e.argv.includes('status')) statuses++
     const stdout = command === 'uname' ? 'Linux\n'
       : command === 'git' && e.argv.includes('status') ? status
       : command === 'git' ? 'worktree /repo\n\n'
@@ -143,6 +152,46 @@ test('headless session does not collect or rewrite a close prompt', async ($, on
   expect(runs).toBe(0)
   const prompt = await $.prompt.submit({ text: 'are we done?', wait: false, origin: { kind: 'composer' } })
   expect(prompt.text).toBe('are we done?')
+})
+
+test('desktop attach after a headless start collects facts and adds them to a close prompt', async ($, on) => {
+  const clock = world(on, '## main\n M a\n')
+  on('session.attach', ($, e) => ({ clientId: e.clientId }))
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await clock.settle()
+  const before = await $.prompt.submit({ text: 'are we done?', wait: false, origin: { kind: 'composer' } })
+  expect(before.text).toBe('are we done?')
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
+  await clock.settle()
+  const after = await $.prompt.submit({ text: 'are we done?', wait: false, origin: { kind: 'composer' } })
+  expect(after.text).toContain('\n\n[close-gate facts, 0s old]')
+  expect(after.text).toContain('Git: 1 changed')
+})
+
+test('an attach during a headless start collects once', async ($, on) => {
+  const clock = world(on, '## main\n M a\n')
+  on('session.attach', ($, e) => ({ clientId: e.clientId }))
+  let release = () => {}
+  hold = new Promise<void>(resolve => { release = resolve })
+  const inside = new Promise<void>(resolve => { reached = resolve })
+  const starting = $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await inside
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
+  release()
+  await starting
+  await clock.settle()
+  expect(statuses).toBe(1)
+  const close = await $.prompt.submit({ text: 'are we done?', wait: false, origin: { kind: 'composer' } })
+  expect(close.text).toContain('Git: 1 changed')
+})
+
+test('a headless start with the desktop already attached collects facts', async ($, on) => {
+  const clock = world(on, '## main\n M a\n')
+  on('session.surfaces', () => ({ value: ['desktop'] }))
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await clock.settle()
+  const close = await $.prompt.submit({ text: 'are we done?', wait: false, origin: { kind: 'composer' } })
+  expect(close.text).toContain('Git: 1 changed')
 })
 
 test('parsers count git files, ports and open items', () => {

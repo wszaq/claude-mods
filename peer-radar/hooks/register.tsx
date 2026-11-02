@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, PluginOptions, Register } from 'claude-code'
 import type { Board, Radar, Repo, Session } from '../types'
 import { COLOR_DIR, POSE, chatColor, critter, hashColor, parseColor } from './critter.mjs'
 import { parseBoard, parseCounts, quote, relayTarget, statusText } from './helpers'
@@ -45,7 +45,7 @@ async function localColors($: EngineInterface, home: string, sessions: Session[]
   return colors
 }
 
-type Runtime = { running: boolean; platform: string; host: string; peerHost: string; repos: string[] }
+type Runtime = { running: boolean; started: boolean; platform: string; host: string; peerHost: string; repos: string[] }
 
 async function collect($: EngineInterface, runtime: Runtime) {
   if (runtime.running) return
@@ -117,26 +117,40 @@ async function collect($: EngineInterface, runtime: Runtime) {
     runtime.running = false
   }
 }
+
+// The start-up work of a session that has a surface: the saved folds, the platform, the options and the
+// collect timers. Session start and a surface that attaches later both call it; it runs once.
+async function startUp($: EngineInterface, runtime: Runtime, options: PluginOptions) {
+  if (runtime.started) return
+  runtime.started = true
+  try {
+    const saved = await $.store.get('collapsed') as Record<string, boolean> | undefined
+    if (saved) await update($, collapsed, () => saved)
+    const os = await run($, ['uname', '-s'])
+    runtime.platform = os.stdout.trim()
+    const home = await $.env.get('HOME')
+    runtime.host = home || ''
+    runtime.peerHost = String(options.peerHost || '')
+    if (runtime.peerHost === 'off' || runtime.peerHost.startsWith('-')) runtime.peerHost = ''
+    runtime.repos = String(options.repos || '').split(',').map(path => path.trim()).filter(Boolean)
+    $.clock.after(5000, () => { void collect($, runtime) })
+    $.clock.every(120000, () => { void collect($, runtime) })
+  } catch { /* Keep session start available. */ }
+}
+
 export const register: Register = (on, options) => {
-  const runtime: Runtime = { running: false, platform: '', host: '', peerHost: '', repos: [] }
+  const runtime: Runtime = { running: false, started: false, platform: '', host: '', peerHost: '', repos: [] }
 
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'radar', description: 'Show peer sessions and sync health' })
     await $.command.register({ name: 'relay', description: 'Relay text to a local or peer session', argumentHint: '<short-id> <text>' })
-    if (e.isInteractive === false) return next(e)
-    try {
-      const saved = await $.store.get('collapsed') as Record<string, boolean> | undefined
-      if (saved) await update($, collapsed, () => saved)
-      const os = await run($, ['uname', '-s'])
-      runtime.platform = os.stdout.trim()
-      const home = await $.env.get('HOME')
-      runtime.host = home || ''
-      runtime.peerHost = String(options.peerHost || '')
-      if (runtime.peerHost === 'off' || runtime.peerHost.startsWith('-')) runtime.peerHost = ''
-      runtime.repos = String(options.repos || '').split(',').map(path => path.trim()).filter(Boolean)
-      $.clock.after(5000, () => { void collect($, runtime) })
-      $.clock.every(120000, () => { void collect($, runtime) })
-    } catch { /* Keep session start available. */ }
+    // The desktop app drives the engine through the SDK: isInteractive is false there, so a surface also counts.
+    if (e.isInteractive !== false || (await $.session.surfaces().catch(() => [])).some(surface => surface !== 'terminal')) await startUp($, runtime, options)
+    return next(e)
+  })
+
+  on('session.attach', async ($, e, next) => {
+    if (e.surface !== 'terminal') await startUp($, runtime, options)
     return next(e)
   })
 

@@ -8,6 +8,8 @@ A chat without that file, such as a Desktop chat, gets the color that its id has
 On Desktop and on a terminal at least 120 columns wide, the cards share one row with Nate's cards.
 Panes use bordered cards with status marks: ✓ done, ● active or warning, ○ idle, ✗ failed.
 
+A Desktop chat starts like a `-p` run (`isInteractive` is false). The mods start their background work when the Desktop app connects (`session.attach`). A plain `-p` run stays quiet.
+
 ## close-gate
 
 `/closeok` shows cached facts. The `mcp__close-gate__running_state` tool returns the same facts.

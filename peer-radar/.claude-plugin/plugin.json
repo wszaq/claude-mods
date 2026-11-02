@@ -1,6 +1,6 @@
 {
   "name": "peer-radar",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Show local and peer Claude Code sessions and sync health.",
   "types": "./types/index.d.ts",
   "userConfig": {
