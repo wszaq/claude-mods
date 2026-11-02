@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 import type { Deliverable } from '../types'
 import { card, mark } from './look'
+import { COLOR_DIR, POSE, card as critterCard, cardsOn, chatColor, critter, hashColor, parseColor, stack } from './critter.mjs'
 
 const PANE = 'deliverable-dock'
 const files = atom({ plugin: 'deliverable-dock', key: 'files' } as const, [] as Deliverable[])
@@ -58,6 +59,17 @@ async function ship($: EngineInterface, home: string, opener: string, item: Deli
   const message = `Shipped ${pathParts(target).name} to Downloads`
   $.ui.toast(message)
   return message
+}
+
+// This chat's color: Cache Keeper's file for it, else the id's own color, as Nate's mods do.
+async function chatHex($: EngineInterface): Promise<string> {
+  const id = await $.session.id()
+  try {
+    const path = `${(await $.env.get('HOME')) ?? ''}${COLOR_DIR}/${id}.json`
+    const picked = parseColor(await $.fs.read(path))
+    if (picked !== null) return chatColor(picked).hex
+  } catch { /* No file: the id's own color. */ }
+  return chatColor(hashColor(id)).hex
 }
 
 export const register: Register = (on, options) => {
@@ -143,8 +155,9 @@ export const register: Register = (on, options) => {
       const below = await next(e)
       const item = (await read($, files)).find(one => one.path === path)
       if (!item) return below
-      const mine = <Box columnGap={2}><Text>{mark(kit, 'done')} {pathParts(path).name} </Text><Box flexShrink={0} columnGap={2}><Button key="ship" label="ship" hotkey="s" plain onPress={() => ship($, home, opener, item)} /><Button key="open" label="open" hotkey="o" plain onPress={() => open($, opener, path)} /><Button key="dismiss" label="dismiss" hotkey="n" plain onPress={() => update($, band, current => current === path ? null : current)} /></Box></Box>
-      return <Box flexDirection="column">{mine}{below}</Box>
+      const hex = await chatHex($)
+      const mine = critterCard(kit, hex, [<Box key="deliverable-dock" columnGap={2}>{critter(kit, e.surface, hex, POSE.done, 20, 'deliverable-dock')}<Text>{pathParts(path).name} </Text><Box flexShrink={0} columnGap={2}><Button key="ship" label="ship" hotkey="s" plain onPress={() => ship($, home, opener, item)} /><Button key="open" label="open" hotkey="o" plain onPress={() => open($, opener, path)} /><Button key="dismiss" label="dismiss" hotkey="n" plain onPress={() => update($, band, current => current === path ? null : current)} /></Box></Box>], 1)
+      return stack(kit, mine, below, cardsOn(e, kit))
     } catch { return next(e) }
   })
 

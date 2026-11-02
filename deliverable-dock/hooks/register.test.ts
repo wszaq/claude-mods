@@ -153,6 +153,8 @@ test('band actions keep MARKER and ship clears the band', async ($, on) => {
     return { value: { exitCode: 0, stdout: e.argv[0] === 'uname' ? 'Darwin\n' : '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('fs.exists', ($, e) => ({ value: e.path === '/home/user/Downloads' }))
+  on('fs.read', ($, e) => ({ value: e.path.includes('/chat-colors/') ? '{"color":1}' : '' }))
+  on('session.id', () => ({ value: 'session-1' }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('tool.call', { tool: 'Write' }, ($, e) => ({ result: { type: 'create', filePath: e.file_path, content: e.content, structuredPatch: [], originalFile: null } }))
@@ -163,7 +165,12 @@ test('band actions keep MARKER and ship clears the band', async ($, on) => {
   await $.session.start(START)
   await $.tool.call({ tool: 'Write', file_path: '/work/a.pdf', content: '' })
   expect(await ui.find({ type: 'Text', text: 'MARKER' })).toBeDefined()
-  expect((await ui.find({ type: 'Text', text: /^✓$/ }))?.props.color).toBe('suggestion')
+  const hex = '#E2B33A' // the yellow chat: Cache Keeper's file says color 1
+  expect((await ui.find({ type: 'Text', text: '▐' }))?.props.color).toBe(hex)
+  const desk = await $.ui.mount({ plugin: 'deliverable-dock', surface: 'desktop', component: 'AbovePrompt', props })
+  expect(String((await desk.find({ type: 'Svg' }))?.props.source)).toContain(hex)
+  expect(await desk.find({ type: 'Text', text: 'MARKER' })).toBeDefined()
+  await desk.unmount()
   for (const label of ['ship', 'open', 'dismiss']) expect(await ui.find({ type: 'Button', text: label })).toBeDefined()
   for (const key of ['s', 'o', 'n']) expect(JSON.stringify(await ui.drawn())).toContain(`"hotkey":"${key}"`)
   await ui.press({ key: 'open' })
@@ -183,6 +190,7 @@ test('footer adds a deliverable only while its band is active', async ($, on) =>
   mock.env(on, { HOME: '/home/user' })
   on('process.run', ($, e) => ({ value: { exitCode: 0, stdout: e.argv[0] === 'uname' ? 'Darwin\n' : '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('session.id', () => ({ value: 'session-1' }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('tool.call', { tool: 'Write' }, ($, e) => ({ result: { type: 'create', filePath: e.file_path, content: e.content, structuredPatch: [], originalFile: null } }))
   let modes: string[] = []

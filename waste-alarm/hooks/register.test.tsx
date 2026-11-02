@@ -44,6 +44,8 @@ test('shows tips in the band and a pane on terminal and desktop', async ($, on) 
   const clock = mock.clock(on, { now: new Date(2026, 9, 9, 12).getTime() })
   mock.store(on)
   mock.env(on, { HOME: '/home/test' })
+  on('session.id', () => ({ value: 'session-1' }))
+  on('fs.read', ($, e) => ({ value: e.path.includes('/chat-colors/') ? '{"color":1}' : '' }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   const opened: string[] = []
@@ -68,7 +70,9 @@ test('shows tips in the band and a pane on terminal and desktop', async ($, on) 
       scroll: { bodyRows: 3, offset: 0 }, view: {},
     } })
     if (!await band.find({ type: 'Text', text: '2 new tips' })) throw new Error(`band tips missing on ${surface}`)
-    expect((await band.find({ type: 'Text', text: /^●$/ }))?.props.color).toBe('warning')
+    const hex = '#E2B33A' // the yellow chat: Cache Keeper's file says color 1
+    if (surface === 'desktop') expect(String((await band.find({ type: 'Svg' }))?.props.source)).toContain(hex)
+    else expect((await band.find({ type: 'Text', text: '▐' }))?.props.color).toBe(hex)
     expect(await band.find({ type: 'Text', text: 'MARKER' })).toBeDefined()
     expect(await band.find({ type: 'Button', text: 'tips' })).toBeDefined()
     expect(JSON.stringify(await band.drawn())).toContain('"hotkey":"w"')
@@ -124,6 +128,7 @@ test('dismissal survives a changed count in the tip title', async ($, on) => {
   mock.store(on)
   mock.env(on, { HOME: '/home/test' })
   let tipRuns = 0
+  on('session.id', () => ({ value: 'session-1' }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('fs.exists', () => ({ value: true }))

@@ -3,6 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { CheckView } from '../types'
 import { card, mark } from './look'
+import { COLOR_DIR, POSE, card as critterCard, cardsOn, chatColor, critter, hashColor, parseColor, stack } from './critter.mjs'
 
 const changed = atom({ plugin: 'verify-gate', key: 'changed' } as const, [] as string[])
 const enabled = atom({ plugin: 'verify-gate', key: 'enabled' } as const, true)
@@ -59,6 +60,17 @@ async function choose($: EngineInterface, root: string, files: string[], manual 
     return { argv: ['python3', '-m', 'pytest', '-q', '-x'], cwd: root, name: 'pytest', timeoutMs: 120000 }
   }
   return null
+}
+
+// This chat's color: Cache Keeper's file for it, else the id's own color, as Nate's mods do.
+async function chatHex($: EngineInterface): Promise<string> {
+  const id = await $.session.id()
+  try {
+    const path = `${(await $.env.get('HOME')) ?? ''}${COLOR_DIR}/${id}.json`
+    const picked = parseColor(await $.fs.read(path))
+    if (picked !== null) return chatColor(picked).hex
+  } catch { /* No file: the id's own color. */ }
+  return chatColor(hashColor(id)).hex
 }
 
 let cwd = ''
@@ -229,8 +241,10 @@ export const register: Register = on => {
         : last.kind === 'pass' ? <Text dimColor>verify-gate: {mark(kit, 'done')} {last.name}{age}{flags}</Text>
         : <Text>verify-gate: {mark(kit, 'fail')} {last.name} exit {last.exitCode}{flags}</Text>
       const below = await next(e)
-      const mine = <Box columnGap={2}>{label}{last.kind === 'fail' && <Box flexShrink={0} columnGap={2}><Button key="log" label="log" hotkey="l" plain onPress={() => $.ui.open({ id: logPane, title: 'verify-gate log' })} /><Button key="rerun" label="rerun" hotkey="r" plain onPress={() => runManual($)} /></Box>}</Box>
-      return <Box flexDirection="column">{mine}{below}</Box>
+      const hex = await chatHex($)
+      const pose = last.kind === 'running' ? POSE.working : last.kind === 'pass' ? POSE.done : { acc: ['bang'] }
+      const mine = critterCard(kit, hex, [<Box key="verify-gate" columnGap={2}>{critter(kit, e.surface, hex, pose, 20, 'verify-gate')}{label}{last.kind === 'fail' && <Box flexShrink={0} columnGap={2}><Button key="log" label="log" hotkey="l" plain onPress={() => $.ui.open({ id: logPane, title: 'verify-gate log' })} /><Button key="rerun" label="rerun" hotkey="r" plain onPress={() => runManual($)} /></Box>}</Box>], 1)
+      return stack(kit, mine, below, cardsOn(e, kit))
     } catch { return next(e) }
   })
 

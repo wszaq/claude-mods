@@ -18,7 +18,7 @@ function fixture(on: On, files: Record<string, string>, exitCode = 0, delay = fa
   let release: (() => void) | undefined
   mock.env(on, { HOME: '/home/test' })
   on('fs.exists', ($, e) => ({ value: e.path in files }))
-  on('fs.read', ($, e) => ({ value: files[e.path] ?? '' }))
+  on('fs.read', ($, e) => ({ value: e.path.includes('/chat-colors/') ? '{"color":1}' : files[e.path] ?? '' }))
   on('process.run', ($, e) => {
     runs.push({ argv: [...e.argv], cwd: e.init?.cwd })
     return { value: {
@@ -35,6 +35,7 @@ function fixture(on: On, files: Record<string, string>, exitCode = 0, delay = fa
   })
   on('tool.call', { tool: 'Write' }, ($, e) => ({ result: { filePath: e.file_path } } as any))
   on('turn.complete', () => ({ text: '' }))
+  on('session.id', () => ({ value: 'session-1' }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('command.run', { command: 'verify-gate' }, () => ({ text: '' }))
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => $.ui.resolve(e).Text({ children: 'MARKER' }))
@@ -147,7 +148,7 @@ test('Markdown advisory shows only the flag count', async ($, on) => {
   expect(kit.spawned).toHaveLength(0)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'verify-gate', surface, component: 'AbovePrompt', props: BAND })
-    expect((await ui.find({ type: 'Text' }))?.text).toContain('1 flag')
+    expect((await ui.find({ type: 'Text', text: /verify-gate:/ }))?.text).toContain('1 flag')
     await ui.unmount()
   }
 })
@@ -173,27 +174,38 @@ test('manual verify runs despite a config match filter', async ($, on) => {
 
 test('band shows running, pass, and fail on terminal and desktop', async ($, on) => {
   const kit = fixture(on, { '/repo/package.json': JSON.stringify({ scripts: { test: 'node test.js' } }) }, 0, true)
+  const hex = '#E2B33A' // the yellow chat: Cache Keeper's file says color 1
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'verify-gate', surface, component: 'AbovePrompt', props: BAND })
     kit.setExitCode(0)
     await $.tool.call({ tool: 'Write', file_path: '/repo/a.ts', content: 'x' })
     await $.turn.complete(TURN)
     await kit.clock.advance(0)
-    expect((await ui.find({ type: 'Text' }))?.text).toContain('running')
+    expect((await ui.find({ type: 'Text', text: /verify-gate:/ }))?.text).toContain('running')
     expect((await ui.find({ type: 'Text', text: /^●$/ }))?.props.color).toBe('claude')
+    if (surface === 'desktop') expect(String((await ui.find({ type: 'Svg' }))?.props.source)).toContain(hex)
+    else expect((await ui.find({ type: 'Text', text: '▐' }))?.props.color).toBe(hex)
     expect(await ui.find({ type: 'Text', text: 'MARKER' })).toBeDefined()
     kit.releaseProcess()
     await kit.clock.advance(0)
-    expect((await ui.find({ type: 'Text' }))?.text).toContain('✓ npm test')
+    expect((await ui.find({ type: 'Text', text: /verify-gate:/ }))?.text).toContain('✓ npm test')
     expect((await ui.find({ type: 'Text', text: /^✓$/ }))?.props.color).toBe('suggestion')
+    if (surface === 'desktop') expect(String((await ui.find({ type: 'Svg' }))?.props.source)).toContain(hex)
+    else expect((await ui.find({ type: 'Text', text: '▐' }))?.props.color).toBe(hex)
+    if (surface === 'desktop') expect(String((await ui.find({ type: 'Svg' }))?.props.source)).toContain('#4EBA65') // the done flag
+    else expect(await ui.find({ type: 'Text', text: '^ ^' })).toBeDefined()
     kit.setExitCode(1)
     await $.tool.call({ tool: 'Write', file_path: '/repo/a.ts', content: 'y' })
     await $.turn.complete(TURN)
     await kit.clock.advance(0)
     kit.releaseProcess()
     await kit.clock.advance(0)
-    expect((await ui.find({ type: 'Text' }))?.text).toContain('✗ npm test exit 1')
+    expect((await ui.find({ type: 'Text', text: /verify-gate:/ }))?.text).toContain('✗ npm test exit 1')
     expect((await ui.find({ type: 'Text', text: /^✗$/ }))?.props.color).toBe('error')
+    if (surface === 'desktop') expect(String((await ui.find({ type: 'Svg' }))?.props.source)).toContain(hex)
+    else expect((await ui.find({ type: 'Text', text: '▐' }))?.props.color).toBe(hex)
+    if (surface === 'desktop') expect(String((await ui.find({ type: 'Svg' }))?.props.source)).toContain('>!</text>') // the bang bubble
+    else expect(await ui.find({ type: 'Text', text: 'o o' })).toBeDefined()
     await ui.unmount()
   }
 })

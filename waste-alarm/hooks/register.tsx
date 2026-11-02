@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 import type { Tip } from '../types'
 import { card, mark } from './look'
+import { COLOR_DIR, POSE, card as critterCard, cardsOn, chatColor, critter, hashColor, parseColor, stack } from './critter.mjs'
 
 const tips = atom({ plugin: 'waste-alarm', key: 'tips' } as const, [] as Tip[])
 const collapsed = atom({ plugin: 'waste-alarm', key: 'collapsed' } as const, {} as Record<string, boolean>)
@@ -43,6 +44,17 @@ async function dismiss($: EngineInterface): Promise<void> {
   const dismissed = (await $.store.get('dismissed') as string[] | undefined) ?? []
   await $.store.set('dismissed', [...new Set([...dismissed.map(dismissalKey), ...current.map(tip => dismissalKey(tip.title))])])
   await update($, tips, () => [])
+}
+
+// This chat's color: Cache Keeper's file for it, else the id's own color, as Nate's mods do.
+async function chatHex($: EngineInterface): Promise<string> {
+  const id = await $.session.id()
+  try {
+    const path = `${(await $.env.get('HOME')) ?? ''}${COLOR_DIR}/${id}.json`
+    const picked = parseColor(await $.fs.read(path))
+    if (picked !== null) return chatColor(picked).hex
+  } catch { /* No file: the id's own color. */ }
+  return chatColor(hashColor(id)).hex
 }
 
 export const register: Register = (on, options) => {
@@ -154,8 +166,9 @@ export const register: Register = (on, options) => {
       const kit = $.ui.resolve(e)
       const { Box, Text, Button } = kit
       const below = await next(e)
-      const mine = <Box columnGap={2}><Text>{mark(kit, 'warn')} waste-alarm: {current.length} new tips </Text><Box flexShrink={0} columnGap={2}><Button key="tips" label="tips" hotkey="w" plain onPress={() => $.ui.open({ id: pane, title: 'waste-alarm' })} /><Button key="dismiss" label="Dismiss" hotkey="d" plain onPress={() => dismiss($)} /></Box></Box>
-      return <Box flexDirection="column">{mine}{below}</Box>
+      const hex = await chatHex($)
+      const mine = critterCard(kit, hex, [<Box key="waste-alarm" columnGap={2}>{critter(kit, e.surface, hex, POSE.cooling, 20, 'waste-alarm')}<Text>waste-alarm: {current.length} new tips </Text><Box flexShrink={0} columnGap={2}><Button key="tips" label="tips" hotkey="w" plain onPress={() => $.ui.open({ id: pane, title: 'waste-alarm' })} /><Button key="dismiss" label="Dismiss" hotkey="d" plain onPress={() => dismiss($)} /></Box></Box>], 1)
+      return stack(kit, mine, below, cardsOn(e, kit))
     } catch { return next(e) }
   })
 
