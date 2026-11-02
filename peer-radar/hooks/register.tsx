@@ -199,9 +199,14 @@ export const register: Register = (on, options) => {
       ...b.sessions.map(s => (
         <Box key={`session-${s.id}`} flexDirection="row" gap={1} alignItems="center">
           {critter(kit, e.surface, chatColor(colors?.[s.id] ?? hashColor(s.id)).hex, poseOf(s.state), 16, s.id)}
-          <Text>{s.id}</Text>
-          <Text dimColor>{s.state} {s.age} {s.workspace}</Text>
-          <Text wrap="truncate-end">{s.claim}</Text>
+          <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+            <Box flexDirection="row" gap={1}>
+              <Text bold>{s.id}</Text>
+              <Text dimColor>{`${s.state} · ${s.age}`}</Text>
+              <Text dimColor wrap="truncate-end">{s.workspace}</Text>
+            </Box>
+            <Text wrap="truncate-end">{s.claim}</Text>
+          </Box>
         </Box>
       )),
       ...b.raw.map((line, i) => <Text key={`raw-${i}`} dimColor>{line}</Text>),

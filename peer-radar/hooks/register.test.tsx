@@ -232,6 +232,10 @@ test('collected pane draws cards with critters in chat colors and folds a card',
     expect(await ui.find({ type: 'Text', text: 'This machine (macOS)' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Peer is disabled.' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'No repositories configured.' })).toBeDefined()
+    // Two lines per session, each cut at its end: the folder and the claim never wrap the row.
+    expect((await ui.find({ type: 'Text', text: 'active · 2m' }))?.props.dimColor).toBe(true)
+    expect((await ui.find({ type: 'Text', text: '/work/one' }))?.props.wrap).toBe('truncate-end')
+    expect((await ui.find({ type: 'Text', text: 'build the long item then verify the result' }))?.props.wrap).toBe('truncate-end')
     // The session rows have no status glyph now: only the disabled-peer mark is left.
     expect((await ui.findAll({ type: 'Text', text: /^[●○✓✗]$/ })).map(one => one.props.color)).toEqual(['inactive'])
     if (surface === 'desktop') {
