@@ -5,6 +5,10 @@ const BAND = {
   hasSurvey: false, isWorking: false, maxRows: 3, bodyColumns: 80,
   scroll: { offset: 0, bodyRows: 2 }, view: {},
 }
+const PANE = {
+  title: 'close-gate', isFocused: true, bodyColumns: 80, placement: 'inline',
+  scroll: { bodyRows: 20, offset: 0 }, view: {},
+} as const
 
 // A test sets these to hold session start inside its command.register call and to learn that it got there.
 let hold: Promise<void> | undefined
@@ -22,7 +26,7 @@ function base(on: Parameters<typeof mock.clock>[0]) {
   on('prompt.submit', ($, e) => ({ text: e.text, context: e.context }))
 }
 
-function world(on: Parameters<typeof mock.clock>[0], status: string, items = '', claim = 'working') {
+function world(on: Parameters<typeof mock.clock>[0], status: string | (() => string), items = '', claim = 'working', lsof = () => 'COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\n') {
   base(on)
   const clock = mock.clock(on, { now: 40000 })
   mock.env(on, { HOME: '/home/test' })
@@ -32,9 +36,9 @@ function world(on: Parameters<typeof mock.clock>[0], status: string, items = '',
     const command = e.argv[0]
     if (command === 'git' && e.argv.includes('status')) statuses++
     const stdout = command === 'uname' ? 'Linux\n'
-      : command === 'git' && e.argv.includes('status') ? status
+      : command === 'git' && e.argv.includes('status') ? (typeof status === 'string' ? status : status())
       : command === 'git' ? 'worktree /repo\n\n'
-      : command === 'lsof' ? 'COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\n'
+      : command === 'lsof' ? lsof()
       : ''
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
@@ -74,15 +78,114 @@ test('band shows changed, unpushed and open items', async ($, on) => {
   }
 })
 
-test('Hide has hotkey x and removes only the close band', async ($, on) => {
+test('Dismiss has hotkey x, tips has hotkey c, and Dismiss removes only the close band', async ($, on) => {
   const clock = world(on, '## main\n M a\n')
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   await clock.settle()
   const ui = await $.ui.mount({ plugin: 'close-gate', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   expect(JSON.stringify(await ui.drawn())).toContain('"hotkey":"x"')
-  await ui.press({ key: 'hide' })
+  expect(JSON.stringify(await ui.drawn())).toContain('"hotkey":"c"')
+  await ui.press({ key: 'dismiss' })
   expect(await ui.find({ type: 'Text', text: /close-gate/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: 'MARKER' })).toBeDefined()
+})
+
+test('Dismiss keeps the band hidden until a new or returning kind of fact shows', async ($, on) => {
+  let status = '## main\n M a\n'
+  let lsof = 'COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\n'
+  const clock = world(on, () => status, '', 'working', () => lsof)
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const ui = await $.ui.mount({ plugin: 'close-gate', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  await ui.press({ key: 'dismiss' })
+  expect(await ui.find({ type: 'Text', text: /close-gate/ })).toBeUndefined()
+
+  // A changed count is the same kind: the band stays hidden.
+  status = '## main\n M a\n M b\n'
+  await clock.advance(60000)
+  expect(await ui.find({ type: 'Text', text: /close-gate/ })).toBeUndefined()
+
+  // A new kind shows the band with only that kind.
+  lsof += 'node 100 me 20u IPv4 1 0t0 TCP *:3000 (LISTEN)\n'
+  await clock.advance(60000)
+  expect(await ui.find({ type: 'Text', text: /close-gate: port node:3000 · / })).toBeDefined()
+  await ui.press({ key: 'dismiss' })
+  expect(await ui.find({ type: 'Text', text: /close-gate/ })).toBeUndefined()
+
+  // The facts still carry every kind for the model.
+  expect((await $.tool.call({ tool: 'mcp__close-gate__running_state' })).result).toContain('2 changed')
+  const close = await $.prompt.submit({ text: 'are we done?', wait: false, origin: { kind: 'composer' } })
+  expect(close.text).toContain('Git: 2 changed')
+  expect(close.text).toContain('Dev ports: node:3000')
+
+  // A kind that clears and comes back shows again.
+  status = '## main\n'
+  await clock.advance(60000)
+  status = '## main\n M c\n'
+  await clock.advance(60000)
+  expect(await ui.find({ type: 'Text', text: /close-gate: 1 changed · / })).toBeDefined()
+  await ui.unmount()
+})
+
+test('tips button and /closeok tips open the pane with tips and facts', async ($, on) => {
+  const clock = world(on, '## main...origin/main [ahead 2]\n M a\n', '- [ ] one\n')
+  mock.store(on)
+  const opened: string[] = []
+  on('ui.open', ($, e) => { opened.push(e.id); return { value: { isPlaced: true } } })
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const band = await $.ui.mount({ plugin: 'close-gate', surface, component: 'AbovePrompt', props: BAND })
+    expect(await band.find({ type: 'Button', text: 'tips' })).toBeDefined()
+    await band.press({ key: 'tips' })
+    const pane = await $.ui.mount({ plugin: 'close-gate', surface, component: 'Pane', requestId: 'close-gate', props: PANE })
+    expect(await pane.find({ type: 'Text', text: 'Push the commits, or open a PR in a deploy repo.' })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: /Git: 1 changed, 2 unpushed/ })).toBeDefined()
+    expect((await pane.find({ type: 'Text', text: /^●$/ }))?.props.color).toBe('warning')
+    await pane.press({ key: 'toggle-tips' })
+    expect(await pane.find({ type: 'Text', text: 'Commit or stash the changes.' })).toBeUndefined()
+    expect(await pane.find({ type: 'Text', text: /Git: 1 changed/ })).toBeDefined()
+    await pane.press({ key: 'toggle-tips' })
+    expect(await pane.find({ type: 'Text', text: 'Commit or stash the changes.' })).toBeDefined()
+    await band.unmount()
+    await pane.unmount()
+  }
+  const run = (args: string) => $.command.run({ command: 'closeok', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
+  expect((await run('tips')).text).toBe('close-gate pane opened.')
+  expect(opened).toEqual(['close-gate', 'close-gate', 'close-gate'])
+  expect((await run('dismiss')).text).toContain('dismissed')
+  const band = await $.ui.mount({ plugin: 'close-gate', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  expect(await band.find({ type: 'Text', text: /close-gate/ })).toBeUndefined()
+  expect((await run('')).text).toContain('Git: 1 changed, 2 unpushed')
+  expect((await run('nope')).text).toBe('Usage: /closeok [tips|dismiss]')
+})
+
+test('pane draws before collection', async ($, on) => {
+  base(on)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const pane = await $.ui.mount({ plugin: 'close-gate', surface, component: 'Pane', requestId: 'close-gate', props: PANE })
+    expect(await pane.find({ type: 'Text', text: 'No facts yet.' })).toBeDefined()
+    await pane.unmount()
+  }
+})
+
+test('pane says ready to close when nothing is left', async ($, on) => {
+  const clock = world(on, '## main\n')
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const pane = await $.ui.mount({ plugin: 'close-gate', surface: 'desktop', component: 'Pane', requestId: 'close-gate', props: PANE })
+  expect(await pane.find({ type: 'Text', text: /Ready to close/ })).toBeDefined()
+})
+
+test('footer shows the count to close until it is dismissed', async ($, on) => {
+  const clock = world(on, '## main\n M a\n')
+  on('ui.render', { component: 'SessionMode' }, ($, e) => $.ui.resolve(e).Text({ children: (e.props.modes as string[]).join(' | ') }))
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const footer = () => $.ui.mount({ plugin: 'close-gate', surface: 'terminal', component: 'SessionMode', props: { modes: ['plan'] } })
+  expect(await (await footer()).find({ type: 'Text', text: 'plan | 1 to close · /closeok tips' })).toBeDefined()
+  await $.command.run({ command: 'closeok', args: 'dismiss', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
+  expect(await (await footer()).find({ type: 'Text', text: 'plan' })).toBeDefined()
 })
 
 test('band falls through before collection', async ($, on) => {

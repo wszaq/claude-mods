@@ -1,10 +1,13 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 import type { Facts } from '../types'
-import { COLOR_DIR, POSE, card, cardsOn, chatColor, critter, hashColor, parseColor, stack } from './critter.mjs'
+import { card, mark } from './look'
+import { COLOR_DIR, POSE, card as critterCard, cardsOn, chatColor, critter, hashColor, parseColor, stack } from './critter.mjs'
 
 const facts = atom({ plugin: 'close-gate', key: 'facts' } as const, null)
-const hidden = atom({ plugin: 'close-gate', key: 'hidden' } as const, false)
+const dismissed = atom({ plugin: 'close-gate', key: 'dismissed' } as const, [] as string[])
+const collapsed = atom({ plugin: 'close-gate', key: 'collapsed' } as const, {} as Record<string, boolean>)
+const pane = 'close-gate'
 const CLOSE = /\b(are we done|what('?s| is) left|anything left|good to close|can we close|ready to close|we('re| are| r)? done|wrap up|handoff)\b/i
 const DEV = /^(node|python|python3|bun|deno|vite|next|ruby|php)$/
 const HINT = 'Call the `mcp__close-gate__running_state` tool for git, worktree, port, claim and open-item facts instead of running git, ps or lsof by hand.'
@@ -48,16 +51,32 @@ function age(now: number, at: number) {
   return `${Math.max(0, Math.floor((now - at) / 1000))}s ago`
 }
 
-function bandText(f: Facts, now: number) {
-  const parts = [
-    f.changed ? `${f.changed} changed` : '',
-    f.ahead ? `${f.ahead} unpushed` : '',
-    f.behind ? `${f.behind} behind` : '',
-    f.worktrees ? `${f.worktrees} worktree${f.worktrees === 1 ? '' : 's'}` : '',
-    f.ports.length ? `ports ${f.ports.join(', ')}` : '',
-    f.openItems ? `open items ${f.openItems}` : '',
-  ].filter(Boolean)
-  return `close-gate: ${parts.length ? parts.join(' · ') : 'ready to close'} · ${age(now, f.at)}`
+type Item = { kind: string; text: string; tip: string }
+
+// One band item per kind of fact. Dismiss stores the kinds, so a changed count keeps its item hidden.
+export function items(f: Facts): Item[] {
+  return [
+    ...(f.changed ? [{ kind: 'changed', text: `${f.changed} changed`, tip: 'Commit or stash the changes.' }] : []),
+    ...(f.ahead ? [{ kind: 'unpushed', text: `${f.ahead} unpushed`, tip: 'Push the commits, or open a PR in a deploy repo.' }] : []),
+    ...(f.behind ? [{ kind: 'behind', text: `${f.behind} behind`, tip: 'Pull the upstream commits before you push.' }] : []),
+    ...(f.worktrees ? [{ kind: 'worktrees', text: `${f.worktrees} worktree${f.worktrees === 1 ? '' : 's'}`, tip: 'Merge or remove the extra worktrees (git worktree list).' }] : []),
+    ...f.ports.map(port => ({ kind: `port:${port}`, text: `port ${port}`, tip: `Stop the dev server on ${port} if nothing needs it.` })),
+    ...(f.openItems ? [{ kind: 'open-items', text: `open items ${f.openItems}`, tip: 'Finish each open item, or tag it DECISION, BLOCKED, SCOPE or PARKED.' }] : []),
+  ]
+}
+
+async function shown($: EngineInterface, f: Facts): Promise<Item[]> {
+  const hide = await read($, dismissed)
+  return items(f).filter(item => !hide.includes(item.kind))
+}
+
+async function dismiss($: EngineInterface): Promise<void> {
+  const f = await read($, facts)
+  if (f) await update($, dismissed, all => [...new Set([...all, ...items(f).map(item => item.kind)])])
+}
+
+function openPane($: EngineInterface) {
+  return $.ui.open({ id: pane, title: 'close-gate' })
 }
 
 function factText(f: Facts | null, now: number) {
@@ -122,12 +141,21 @@ async function collect($: EngineInterface, state: Collector) {
       } catch {}
     }
     const at = await $.clock.now()
-    await update($, facts, () => ({ at, ...parsed, worktrees, ports, claim, openItems, git }))
+    const next: Facts = { at, ...parsed, worktrees, ports, claim, openItems, git }
+    await update($, facts, () => next)
+    // A dismissed kind that cleared shows again when it comes back.
+    const kinds = items(next).map(item => item.kind)
+    const hide = await read($, dismissed)
+    if (hide.some(kind => !kinds.includes(kind))) await update($, dismissed, all => all.filter(kind => kinds.includes(kind)))
   } catch {}
 }
 
-// Collect the facts at once and then every minute. Session start and a surface that attaches later both call it.
-function startCollecting($: EngineInterface, state: Collector) {
+// Restore the folds, then collect the facts at once and every minute. Session start and a surface that attaches later both call it.
+async function startCollecting($: EngineInterface, state: Collector) {
+  try {
+    const saved = await $.store.get('collapsed') as Record<string, boolean> | undefined
+    if (saved) await update($, collapsed, () => saved)
+  } catch {}
   $.clock.after(0, () => { void collect($, state) })
   $.clock.every(60000, () => { void collect($, state) })
 }
@@ -144,17 +172,17 @@ export const register: Register = on => {
       description: 'Running state of this session for a handoff or a close check: uncommitted and unpushed git changes, worktrees, listening dev ports, the session claim and open items. Call this instead of running git, ps or lsof by hand.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     })
-    await $.command.register({ name: 'closeok', description: 'Show the cached close check.' })
+    await $.command.register({ name: 'closeok', description: 'Show the cached close check, its tips pane, or dismiss the band.', argumentHint: '[tips|dismiss]' })
     if (!live) return next(e)
 
-    startCollecting($, state)
+    await startCollecting($, state)
     return next(e)
   })
 
-  on('session.attach', ($, e, next) => {
+  on('session.attach', async ($, e, next) => {
     if (e.surface !== 'terminal' && !interactive) {
       interactive = true
-      startCollecting($, state)
+      await startCollecting($, state)
     }
     return next(e)
   })
@@ -162,16 +190,59 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     try {
       const f = await read($, facts)
-      if (!f || e.props.hasSurvey || await read($, hidden)) return next(e)
+      if (!f || e.props.hasSurvey) return next(e)
+      const left = await shown($, f)
+      if (left.length === 0) return next(e)
       const el = $.ui.resolve(e)
       const { Box, Text, Button } = el
-      const clear = !f.changed && !f.ahead && !f.behind && !f.worktrees && !f.ports.length && !f.openItems
       const below = await next(e)
-      if (clear) return below
       const hex = await chatHex($)
-      const mine = card(el, hex, [<Box key="close-gate" columnGap={2}>{critter(el, e.surface, hex, POSE.waiting, 20, 'close-gate')}<Text>{bandText(f, await $.clock.now())}{' '}</Text><Box flexShrink={0}><Button key="hide" label="Hide" hotkey="x" plain onPress={() => update($, hidden, () => true)} /></Box></Box>], 1)
+      const text = `close-gate: ${left.map(item => item.text).join(' · ')} · ${age(await $.clock.now(), f.at)}`
+      const mine = critterCard(el, hex, [<Box key="close-gate" columnGap={2}>{critter(el, e.surface, hex, POSE.waiting, 20, 'close-gate')}<Text>{text}{' '}</Text><Box flexShrink={0} columnGap={2}><Button key="tips" label="tips" hotkey="c" plain onPress={() => openPane($)} /><Button key="dismiss" label="Dismiss" hotkey="x" plain onPress={() => dismiss($)} /></Box></Box>], 1)
       return stack(el, mine, below, cardsOn(e, el))
     } catch { return next(e) }
+  })
+
+  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+    try {
+      const f = await read($, facts)
+      const left = f ? await shown($, f) : []
+      if (left.length === 0) return next(e)
+      const modes = Array.isArray(e.props.modes) ? e.props.modes : []
+      return next({ ...e, props: { ...e.props, modes: [...modes, `${left.length} to close · /closeok tips`] } })
+    } catch { return next(e) }
+  })
+
+  on('ui.render', { component: 'Pane', requestId: pane }, async ($, e) => {
+    const kit = $.ui.resolve(e)
+    const { Box, Text } = kit
+    const f = await read($, facts)
+    const shut = await read($, collapsed)
+    const all = f ? items(f) : []
+    const fold = (id: string) => ({
+      isShut: shut[id] === true,
+      onToggle: async () => {
+        const value = await update($, collapsed, folds => ({ ...folds, [id]: !folds[id] }))
+        await $.store.set('collapsed', value)
+      },
+    })
+    const factRows = !f ? <Text dimColor>No facts yet.</Text> : [
+      <Text key="git">{mark(kit, f.git && !f.changed && !f.ahead && !f.behind && !f.worktrees ? 'done' : f.git ? 'warn' : 'idle')} Git: {f.git ? `${f.changed} changed, ${f.ahead} unpushed, ${f.behind} behind, ${f.worktrees} extra worktrees` : 'not a git repo'}</Text>,
+      <Text key="ports">{mark(kit, f.ports.length ? 'warn' : 'done')} Dev ports: {f.ports.join(', ') || 'none'}</Text>,
+      <Text key="claim">{mark(kit, f.claim ? 'active' : 'idle')} Claim: {f.claim || 'none'}</Text>,
+      <Text key="open">{mark(kit, f.openItems ? 'warn' : 'done')} Open items: {f.openItems}</Text>,
+      <Text key="age" dimColor>Age: {age(await $.clock.now(), f.at)}</Text>,
+    ]
+    const tips = !f ? <Text dimColor>No tips yet.</Text> : all.length === 0 ? <Text>{mark(kit, 'done')} Ready to close.</Text> : all.map(item => (
+      <Box key={`tip-${item.kind}`} flexDirection="column" marginBottom={1}>
+        <Text>{mark(kit, 'warn')} {item.text}</Text>
+        <Text dimColor>{item.tip}</Text>
+      </Box>
+    ))
+    return <Box flexDirection="column">
+      {card(kit, 'tips', 'Tips', tips, fold('tips'))}
+      {card(kit, 'facts', 'Close facts', factRows, fold('facts'))}
+    </Box>
   })
 
   on('tool.call', { tool: 'mcp__close-gate__running_state' }, async ($, e, next) => {
@@ -201,7 +272,18 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'closeok' }, async ($, e, next) => {
-    try { return { text: factText(await read($, facts), await $.clock.now()) } }
-    catch { return next(e) }
+    try {
+      const args = e.args.trim()
+      if (args === 'tips') {
+        await openPane($)
+        return { text: 'close-gate pane opened.' }
+      }
+      if (args === 'dismiss') {
+        await dismiss($)
+        return { text: 'close-gate: band dismissed until a new kind of fact shows.' }
+      }
+      if (args) return { text: 'Usage: /closeok [tips|dismiss]' }
+      return { text: factText(await read($, facts), await $.clock.now()) }
+    } catch { return next(e) }
   })
 }

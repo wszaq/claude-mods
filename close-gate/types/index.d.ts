@@ -12,6 +12,6 @@ export type Facts = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'close-gate': { facts: Facts | null; hidden: boolean }
+    'close-gate': { facts: Facts | null; dismissed: string[]; collapsed: Record<string, boolean> }
   }
 }

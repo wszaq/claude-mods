@@ -12,10 +12,20 @@ A Desktop chat starts like a `-p` run (`isInteractive` is false). The mods start
 
 ## close-gate
 
-`/closeok` shows cached facts. The `mcp__close-gate__running_state` tool returns the same facts.
+| Command | Result |
+| --- | --- |
+| `/closeok` | Show the cached facts as text |
+| `/closeok tips` | Open the pane with tips and facts |
+| `/closeok dismiss` | Dismiss the current band items |
+
+The `mcp__close-gate__running_state` tool returns the same facts as `/closeok`.
 The collector reads Git status, extra worktrees, listening ports, and optional session records every 60 seconds.
 The port list is machine-wide and includes at most five recognized development processes.
-The band appears when one of its counts is nonzero. Hide uses hotkey `x`.
+The band appears when one of its counts is nonzero. The tips button uses `c`. Dismiss uses `x`.
+Dismiss hides each kind of fact that the band shows now (changed, unpushed, behind, worktrees, each port, open items) for this session.
+A dismissed kind stays hidden when its count changes. It shows again when it clears and comes back. A new kind shows the band again.
+Dismiss changes only the band and the footer. The tool, `/closeok`, and close prompts still get all facts.
+The pane has two cards: Tips and Close facts. Each card opens or closes with its title, and keeps that state across sessions.
 
 If present, claim files use `~/.claude/session-claims/<session-id>.json` and the matching Markdown file.
 The mod counts every `- [ ] ` line in that Markdown file.

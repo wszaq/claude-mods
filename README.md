@@ -5,7 +5,7 @@ A mod observes session events and adds commands, status text, or a user interfac
 
 | Mod | Purpose | Command |
 | --- | --- | --- |
-| close-gate | Show Git changes, development ports, and optional session claims | `/closeok` |
+| close-gate | Show Git changes, development ports, and optional session claims | `/closeok [tips\|dismiss]` |
 | waste-alarm | Count repeated shell commands and show optional Token Dashboard tips | `/waste` |
 | verify-gate | Run repository checks after a turn that edits files | `/verify-gate` |
 | peer-radar | Show optional local and SSH peer session boards and repository sync state | `/radar`, `/relay` |
