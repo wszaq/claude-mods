@@ -1,5 +1,13 @@
 # Mod reference
 
+## Look
+
+Bands draw as cards with this chat's pixel critter, from Nate Herk's `critter.mjs` (MIT, see `NOTICE`).
+The critter's color is the chat's color from Cache Keeper (`~/.claude/mods-data/chat-colors/<session id>.json`).
+A chat without that file, such as a Desktop chat, gets the color that its id hashes to, as in Nate's mods.
+On Desktop and on a terminal at least 120 columns wide, the cards share one row with Nate's cards.
+Panes use bordered cards with status marks: ✓ done, ● active or warning, ○ idle, ✗ failed.
+
 ## close-gate
 
 `/closeok` shows cached facts. The `mcp__close-gate__running_state` tool returns the same facts.
