@@ -17,6 +17,19 @@ const PANE = {
 
 const PLAN = 'mcp__ccd_turn__update_plan'
 
+type Found = { findAll: (q: object) => Promise<{ text?: string; props: Record<string, unknown> }[]> }
+
+const BLUE = '#4A8FE0'
+const TEAL = '#3BA596'
+const GRAY = '#8F8D88'
+// The chat's critter first, then one per subagent: the body color of each, on Desktop (its Svg) and on the terminal (its ▐ cell).
+const avatars = async (ui: Found, surface: 'terminal' | 'desktop') =>
+  surface === 'desktop'
+    ? (await ui.findAll({ type: 'Svg' }))
+        .filter(one => one.props.alt !== 'on' && one.props.alt !== 'off') // the Mods switches are Svgs too
+        .map(one => String(one.props.source).match(/fill="(#[0-9A-Fa-f]{6})"/)?.[1])
+    : (await ui.findAll({ type: 'Text', text: '▐' })).map(one => one.props.color)
+
 test('the three cards follow the session', async ($, on) => {
   on('command.register', () => ({ value: { command: 'session-panel' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
@@ -63,6 +76,14 @@ test('the three cards follow the session', async ($, on) => {
   })
   on('store.get', () => ({ value: undefined }))
   on('store.set', () => ({ value: undefined }))
+  // The chat color: Cache Keeper's file for this session says blue (3); the id's own color would be orange (0).
+  const colorReads: string[] = []
+  on('session.id', () => ({ value: 'sess-1' }))
+  on('env.get', () => ({ value: '/home/me' }))
+  on('fs.read', (_, e) => {
+    colorReads.push(e.path)
+    return { value: e.path.includes('/chat-colors/') ? '{"color":3}' : '' }
+  })
   const enabled: Record<string, boolean> = { 'close-gate@claude-mods': true, 'goal-meter@nateherk-mods': false, 'session-panel@claude-mods': true, 'other@elsewhere': true }
   // settings.read hooks answer the whole settings object; the engine picks the key (2.1.311).
   on('settings.read', () => ({ value: { enabledPlugins: { ...enabled } } }))
@@ -104,6 +125,11 @@ test('the three cards follow the session', async ($, on) => {
 
   const first = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect(await marks(first)).toEqual(['✓', '●', '○'])
+  // The header above Progress: this chat's critter in the color of its file, the state and the steps done.
+  expect(colorReads).toContain('/home/me/.claude/mods-data/chat-colors/sess-1.json')
+  expect(await avatars(first, 'desktop')).toEqual([BLUE, TEAL, GRAY, TEAL])
+  expect((await first.find({ type: 'Text', text: 'Blue chat · working' }))?.text).toBe('Blue chat · working')
+  expect((await first.find({ type: 'Text', text: '1 of 3 steps' }))?.text).toBe('1 of 3 steps')
   const files = (await first.findAll({ type: 'Text', text: /\.(md|txt)$/ })).map(one => one.text)
   expect(files).toEqual(['notes.md'])
   const chips = (await first.findAll({ type: 'Text', text: /^(ask-me|Web search|gmail|ccd_view)$/ })).map(one => one.text)
@@ -139,7 +165,9 @@ test('the three cards follow the session', async ($, on) => {
   expect(ran).toEqual(['claude plugin enable goal-meter@nateherk-mods', '/reload-plugins'])
   expect((await second.findAll({ type: 'Text', text: /^live$/ })).length).toBe(2)
   const lines = async () =>
-    (await second.findAll({ type: 'Svg' })).map(one => String(one.props.source).match(/stroke="(#[0-9a-f]+)"/)?.[1])
+    (await second.findAll({ type: 'Svg' }))
+      .filter(one => one.props.alt === 'on' || one.props.alt === 'off') // the avatars are Svgs too
+      .map(one => String(one.props.source).match(/stroke="(#[0-9a-f]+)"/)?.[1])
   expect(await lines()).toEqual(['#22c55e', '#22c55e'])
   await second.press({ key: 'mod-goal-meter@nateherk-mods' })
   expect((await second.find({ type: 'Text', text: /^still loaded here$/ }))?.text).toBe('still loaded here')
@@ -151,6 +179,17 @@ test('the three cards follow the session', async ($, on) => {
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
     expect(await marks(ui)).toEqual(['✓', '✓', '●'])
+    expect((await ui.find({ type: 'Text', text: 'Blue chat · working' }))?.text).toBe('Blue chat · working')
+    expect((await ui.find({ type: 'Text', text: '2 of 3 steps' }))?.text).toBe('2 of 3 steps')
+    // The chat's critter, then the subagents': haiku teal, an unknown model gray.
+    expect(await avatars(ui, surface)).toEqual([BLUE, TEAL, GRAY, TEAL, TEAL])
+    // The own cards' titles take the chat color; the borders and the ✓ ● ○ marks keep theirs.
+    for (const title of ['Progress', 'Outputs', 'Used', 'Subagents', 'Mods']) {
+      expect((await ui.find({ type: 'Text', text: new RegExp(`^${title}$`) }))?.props.color).toBe(BLUE)
+    }
+    // Each mod has a ● in a color of its own, picked by its id from the mod palette (the Progress ● is a theme color, the knob has none).
+    const hexes = (await ui.findAll({ type: 'Text', text: '●' })).map(one => one.props.color).filter(color => String(color).startsWith('#'))
+    expect(hexes).toEqual([GRAY, '#5E9BD6']) // close-gate@claude-mods, goal-meter@nateherk-mods
     expect((await ui.find({ type: 'Text', text: /notes\.md/ }))?.text).toBe('notes.md')
     expect((await ui.find({ type: 'Text', text: /gmail/ }))?.text).toBe('gmail')
 
@@ -201,6 +240,9 @@ test('Outputs lists the files made for the person, not edits or the agent own fi
     const ui = await $.ui.mount({ ...PANE, surface })
     const names = (await ui.findAll({ type: 'Text', text: /\.(md|pdf|docx|html|png|gitignore)$/ })).map(one => one.text)
     expect(names).toEqual(['report.md', 'research.md', 'brief.docx', 'report.pdf', 'index.html', 'chart.png'])
+    // No color file here: the chat has the color of its id, read again at each draw (the id changed at the /clear).
+    expect((await ui.find({ type: 'Text', text: 'Yellow chat · idle' }))?.text).toBe('Yellow chat · idle')
+    expect((await avatars(ui, surface))[0]).toBe('#E2B33A')
     expect((await ui.find({ type: 'Text', text: 'chart.png' }))?.props.dimColor).toBe(true)
     expect((await ui.find({ type: 'Text', text: 'report.pdf' }))?.props.dimColor).toBe(false)
     expect((await ui.find({ type: 'Text', text: 'proj/site' }))?.text).toBe('proj/site')
@@ -273,4 +315,61 @@ test('/session-panel shows a placed pane again and closes only on request', asyn
   calls.length = 0
   expect((await $.command.run({ command: 'session-panel', args: 'close', ...request })).text).toBe('Session pane closed.')
   expect(calls).toEqual(['close session'])
+})
+
+// The chat's critter takes its pose from the task list; each subagent's avatar takes its color from the model family
+// (never a chat color) and its pose from running or done.
+test('the header pose follows the steps and the subagent avatars follow the model family', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'session-panel' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.id', () => ({ value: 'sess-a' })) // the id's own color would be orange (0)
+  on('env.get', () => ({ value: '/home/me' }))
+  on('fs.read', (_, e) => {
+    if (e.path !== '/home/me/.claude/mods-data/chat-colors/sess-a.json') throw new Error('ENOENT')
+    return { value: '{"color":4}' } // purple
+  })
+  on('command.list', () => ({ value: [] }))
+  on('store.get', () => ({ value: undefined }))
+  on('settings.read', () => ({ value: {} }))
+  const models: Record<string, string> = { Haiku: 'claude-haiku-5-5', Sonnet: 'claude-sonnet-5-5', Opus: 'claude-opus-5-5', Fable: 'claude-fable-5-1', Mystery: 'claude-mystery-9' }
+  on('tool.call', { tool: 'Agent' }, (_, e) =>
+    e.description === 'Running'
+      ? { result: { agentId: 'r1', content: [] } } // no totals yet: the row is running, its model the one asked for
+      : { result: { agentId: `a-${e.description}`, resolvedModel: models[String(e.description)], totalTokens: 10, totalDurationMs: 1000, totalToolUseCount: 0, content: [] } },
+  )
+  on('tool.call', () => ({ result: {} }))
+
+  await $.session.start({ cwd: '/work/proj', surface: 'desktop', isInteractive: true })
+  const PURPLE = '#A070D8'
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    expect((await ui.find({ type: 'Text', text: 'Purple chat · idle' }))?.text).toBe('Purple chat · idle')
+    expect(await ui.find({ type: 'Text', text: /steps$/ })).toBeUndefined()
+    expect(await avatars(ui, surface)).toEqual([PURPLE])
+    if (surface === 'terminal') expect((await ui.findAll({ type: 'Text', text: '- -' })).length).toBe(1) // closed eyes: idle
+    await ui.unmount()
+  }
+
+  for (const name of Object.keys(models)) await $.tool.call({ tool: 'Agent', description: name, prompt: 'x' })
+  await $.tool.call({ tool: 'Agent', description: 'Running', model: 'opus', prompt: 'x' })
+  await $.tool.call({
+    tool: PLAN,
+    items: [{ content: 'Plan it', status: 'completed' }, { content: 'Build it', status: 'completed' }],
+    scope: 'first_task',
+  })
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    expect((await ui.find({ type: 'Text', text: 'Purple chat · done' }))?.text).toBe('Purple chat · done')
+    expect((await ui.find({ type: 'Text', text: '2 of 2 steps' }))?.text).toBe('2 of 2 steps')
+    // haiku teal, sonnet ice, opus rose, fable amber, anything else gray; the running opus row has its color too.
+    expect(await avatars(ui, surface)).toEqual([PURPLE, TEAL, '#5E9BD6', '#D9677C', '#E3A33B', GRAY, '#D9677C'])
+    if (surface === 'terminal') {
+      // Happy eyes for the header and the five done rows; open eyes for the one that runs.
+      expect((await ui.findAll({ type: 'Text', text: '^ ^' })).length).toBe(6)
+      expect((await ui.findAll({ type: 'Text', text: '• •' })).length).toBe(1)
+    }
+    await ui.unmount()
+  }
 })

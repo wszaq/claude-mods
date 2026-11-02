@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderChildren, TurnUsage } from 'claude-code'
 
 import type { Agent, Card, Collapsed, Mod, Output, Step, Total } from '../types'
+import { COLOR_DIR, PAL, POSE, card as critterCard, chatColor, critter, hashColor, parseColor } from './critter.mjs'
 
 const PANE = 'session'
 const TITLE = 'Session'
@@ -85,6 +86,28 @@ const priceOf = (usage: TurnUsage) => {
 const priceText = (usd?: number | null) => (typeof usd !== 'number' ? '' : usd < 0.01 ? ' · <$0.01' : ` · $${usd.toFixed(2)}`)
 // A finished row: the tokens of all its model calls, its time and its price.
 const doneText = (total: Total | undefined, ms: number) => `${total ? `${kTokens(total.tokens)} tokens · ` : ''}${duration(ms)}${priceText(total?.usd)}`
+
+// This chat's color and its name: Cache Keeper's file for it, else the id's own color, as Nate's mods do.
+async function chatHex($: EngineInterface): Promise<{ hex: string; name: string }> {
+  const id = await $.session.id().catch(() => '')
+  let color = chatColor(hashColor(id))
+  try {
+    const path = `${(await $.env.get('HOME')) ?? ''}${COLOR_DIR}/${id}.json`
+    const picked = parseColor(await $.fs.read(path))
+    if (picked !== null) color = chatColor(picked)
+  } catch { /* No file: the id's own color. */ }
+  return { hex: color.hex, name: color.name }
+}
+
+// A subagent's avatar shows its model family. These colors never mean a chat, so CHAT_COLORS stays out.
+const familyColor = (model: string) => {
+  const family = model.toLowerCase()
+  return family.includes('haiku') ? PAL.teal : family.includes('sonnet') ? PAL.ice : family.includes('opus') ? '#D9677C' : family.includes('fable') ? PAL.amber : PAL.gray
+}
+
+// A mod's mark: its id picks a color by the algorithm of hashColor, over a palette of its own.
+const MOD_COLORS = ['#3BA596', '#5E9BD6', '#D9677C', '#E3A33B', '#8F8D88', '#3FA9C9']
+const modColor = (id: string) => MOD_COLORS[hashColor(id) % MOD_COLORS.length] ?? PAL.gray
 
 const MARKETS = ['@claude-mods', '@nateherk-mods']
 
@@ -347,10 +370,11 @@ export const register: Register = on => {
     const refresh = async () => {
       await loadMods($)
     }
+    const chat = await chatHex($)
     const card = (id: Card, title: string, body: RenderChildren) => (
       <Box key={`card-${id}`} flexDirection="column" borderStyle="round" borderDimColor paddingX={1} marginBottom={1}>
         <Button key={`toggle-${id}`} plain onPress={toggle(id)}>
-          <Text bold>{title}</Text> <Text dimColor>{shut[id] ? '›' : '⌄'}</Text>
+          <Text bold color={chat.hex}>{title}</Text> <Text dimColor>{shut[id] ? '›' : '⌄'}</Text>
         </Button>
         {!shut[id] && <Box flexDirection="column" marginTop={1}>{body}</Box>}
       </Box>
@@ -364,9 +388,32 @@ export const register: Register = on => {
     const modList = await read($, mods)
     const tokensOf = (one: Agent) => sums[one.agentId ?? '']?.tokens ?? 0
     const most = Math.max(1, ...agentList.map(tokensOf))
+    // The chat's critter shows what the task list says: a step in progress, all steps done, or neither.
+    const isWorking = stepList.some(step => step.status === 'in_progress')
+    const isFinished = stepList.length > 0 && stepList.every(step => step.status === 'completed')
+    const state = isWorking ? 'working' : isFinished ? 'done' : 'idle'
+    const pose = isWorking ? POSE.working : isFinished ? POSE.done : POSE.idle
 
     return (
       <Box flexDirection="column">
+        <Box key="chat-header" flexDirection="column" marginBottom={1}>
+          {critterCard(
+            elements,
+            chat.hex,
+            [
+              <Box key="chat-head" flexDirection="row" alignItems="center" gap={1}>
+                {critter(elements, e.surface, chat.hex, pose, 28, 'chat')}
+                <Box flexDirection="column" flexShrink={1}>
+                  <Text bold>{`${chat.name.charAt(0).toUpperCase()}${chat.name.slice(1)} chat · ${state}`}</Text>
+                  {stepList.length > 0 && (
+                    <Text dimColor>{`${stepList.filter(step => step.status === 'completed').length} of ${stepList.length} steps`}</Text>
+                  )}
+                </Box>
+              </Box>,
+            ],
+            1,
+          )}
+        </Box>
         {card(
           'progress',
           'Progress',
@@ -425,7 +472,10 @@ export const register: Register = on => {
             agentList.map(one => (
               <Box key={`agent-${one.id}`} flexDirection="column" marginBottom={1}>
                 <Box flexDirection="row" justifyContent="space-between" gap={1}>
-                  <Text wrap="truncate-end">{one.name}</Text>
+                  <Box flexDirection="row" gap={1} flexShrink={1}>
+                    {critter(elements, e.surface, familyColor(one.model), one.isDone ? POSE.done : POSE.working, 16, one.name)}
+                    <Text wrap="truncate-end">{one.name}</Text>
+                  </Box>
                   <Text dimColor>{one.model ? shortModel(one.model) : '…'}</Text>
                 </Box>
                 <Text dimColor>
@@ -447,7 +497,10 @@ export const register: Register = on => {
             [
               ...modList.map(mod => (
                 <Box key={`row-${mod.id}`} flexDirection="row" justifyContent="space-between" gap={1}>
-                  <Text dimColor={!mod.isOn} wrap="truncate-end">{mod.id.split('@')[0]}</Text>
+                  <Box flexDirection="row" gap={1} flexShrink={1}>
+                    <Text color={modColor(mod.id)}>●</Text>
+                    <Text dimColor={!mod.isOn} wrap="truncate-end">{mod.id.split('@')[0]}</Text>
+                  </Box>
                   <Box flexDirection="row" alignItems="center" flexShrink={0}>
                     <Box marginRight={1}>
                       <Text dimColor>
