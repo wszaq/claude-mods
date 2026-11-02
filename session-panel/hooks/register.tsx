@@ -149,7 +149,7 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     cwd = e.cwd
     home = (await $.env.get('HOME').catch(() => undefined)) ?? ''
-    await $.command.register({ name: 'session', description: 'Show or hide the Session pane' })
+    await $.command.register({ name: 'session-panel', description: 'Show or hide the Session pane' })
     const saved = (await $.store.get('collapsed').catch(() => undefined)) as Collapsed | undefined
     if (saved) await update($, collapsed, () => ({ ...OPEN, ...saved }))
     await loadMods($).catch(() => undefined)
@@ -160,7 +160,7 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'session' }, async $ => {
+  on('command.run', { command: 'session-panel' }, async $ => {
     const isOpen = (await $.ui.panes()).some(pane => pane.id === PANE && pane.isPlaced)
     if (isOpen) {
       await $.ui.close({ id: PANE })

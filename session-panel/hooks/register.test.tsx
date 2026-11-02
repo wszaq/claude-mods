@@ -18,7 +18,7 @@ const PANE = {
 const PLAN = 'mcp__ccd_turn__update_plan'
 
 test('the three cards follow the session', async ($, on) => {
-  on('command.register', () => ({ value: { command: 'session' } }))
+  on('command.register', () => ({ value: { command: 'session-panel' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('tool.call', { tool: 'Agent' }, (_, e) =>
@@ -162,7 +162,7 @@ test('the three cards follow the session', async ($, on) => {
 })
 
 test('Outputs lists the files made for the person, not edits or the agent own files', async ($, on) => {
-  on('command.register', () => ({ value: { command: 'session' } }))
+  on('command.register', () => ({ value: { command: 'session-panel' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   let id = 'abc123-session'
@@ -211,7 +211,7 @@ test('Outputs lists the files made for the person, not edits or the agent own fi
 
 // A worktree session runs inside a hidden folder: only the part below the working folder is tested for hidden names.
 test('Outputs lists new files in a worktree session', async ($, on) => {
-  on('command.register', () => ({ value: { command: 'session' } }))
+  on('command.register', () => ({ value: { command: 'session-panel' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('command.list', () => ({ value: [] }))
@@ -232,4 +232,24 @@ test('Outputs lists new files in a worktree session', async ($, on) => {
   const names = (await ui.findAll({ type: 'Text', text: /\.(md|pdf)$/ })).map(one => one.text)
   expect(names).toEqual(['deck.pdf', 'guide.md', 'report.md'])
   await ui.unmount()
+})
+
+// Claude Code 2.1.316 ships /session and refuses a mod that registers a built-in's name.
+test('the pane opens at session start when /session is a built-in', async ($, on) => {
+  on('command.register', (_, e) => {
+    if (e.name === 'session') throw new Error('a built-in name')
+    return { value: { command: e.name } }
+  })
+  const opened: string[] = []
+  on('ui.open', (_, e) => {
+    opened.push(e.id)
+    return { value: { isPlaced: true } }
+  })
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('command.list', () => ({ value: [] }))
+  on('store.get', () => ({ value: undefined }))
+  on('settings.read', () => ({ value: {} }))
+
+  await $.session.start({ cwd: '/work/proj', surface: 'desktop', isInteractive: true })
+  expect(opened).toEqual(['session'])
 })

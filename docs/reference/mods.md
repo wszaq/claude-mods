@@ -126,10 +126,10 @@ Ship means a local copy. It does not upload or email the file.
 
 | Command | Result |
 | --- | --- |
-| `/session` | Open or close the Session pane |
+| `/session-panel` | Open or close the Session pane |
 
 The pane opens at session start. A pane that opens without a command needs a wide window.
-In a narrow window, run `/session`.
+In a narrow window, run `/session-panel`.
 
 The pane has five cards. Each card opens or closes with its title, and keeps that state across sessions.
 
