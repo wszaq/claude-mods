@@ -136,26 +136,41 @@ test('the three cards follow the session', async ($, on) => {
   expect(chips).toEqual(['ask-me', 'Web search', 'gmail'])
   expect((await first.find({ type: 'Text', text: /Scan the vault/ }))?.text).toBe('Scan the vault')
   expect((await first.find({ type: 'Text', text: /haiku/ }))?.text).toBe('haiku-5-5')
+  // A done row is a KPI: bold values for tokens, time and price. No bar.
   // Tokens are the sum of all model calls (63000 + 154000), not the result's totalTokens (12345: the last call).
-  expect((await first.find({ type: 'Text', text: /^217\.0k tokens/ }))?.text).toBe('217.0k tokens · 1m 5s · $0.02')
+  expect((await first.find({ type: 'Text', text: '217.0k' }))?.props.bold).toBe(true)
+  expect((await first.find({ type: 'Text', text: '1m 5s' }))?.props.bold).toBe(true)
   expect(await first.find({ type: 'Text', text: /12\.3k/ })).toBeUndefined()
-  // A model without a price shows no price.
-  expect((await first.find({ type: 'Text', text: /^2\.0k tokens/ }))?.text).toBe('2.0k tokens · 3s')
-  expect((await first.find({ type: 'Text', text: /^4s$/ }))?.text).toBe('4s')
+  // A model without a price shows no price; an agent whose calls the mod did not see shows only its time.
+  expect((await first.find({ type: 'Text', text: '2.0k' }))?.text).toBe('2.0k')
+  expect((await first.find({ type: 'Text', text: '4s' }))?.text).toBe('4s')
+  expect((await first.findAll({ type: 'Text', text: /^(\$|<\$)/ })).map(one => one.text)).toEqual(['$0.02'])
+  expect((await first.findAll({ type: 'Box' })).filter(one => one.props.backgroundColor !== undefined)).toEqual([])
+  // The card's own KPI: the rows done and their tokens; no price while one row has none.
+  expect((await first.find({ type: 'Text', text: /done ·/ }))?.text).toBe('3 of 3 done · 219.0k tokens')
   await first.unmount()
 
   // A background agent: the launch has no totals, its turn.complete brings them.
   await $.tool.call({ tool: 'Agent', description: 'Background scan', prompt: 'x' })
   const running = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect((await running.find({ type: 'Text', text: /^running$/ }))?.text).toBe('running')
+  // A running row: its critter walks the track toward the finish line, started as far along as its time.
+  const walk = String((await running.findAll({ type: 'Svg' })).find(one => one.props.alt === 'Background scan')?.props.source)
+  expect(walk).toMatch(/<animateTransform attributeName="transform" type="translate" values="0\.0 0;[^"]*" begin="-\d+s" dur="600s"/)
+  expect((await running.find({ type: 'Text', text: /done ·/ }))?.text).toBe('3 of 4 done · 219.0k tokens')
   await running.unmount()
+  const cells = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await cells.find({ type: 'Text', text: /┃$/ }))?.text).toMatch(/^·*┃$/)
+  await cells.unmount()
   // 2000×2 + 100000×2.50 + 1000000×0.20 + 20000×10 = $0.654.
   await step('b1', { model: 'claude-sonnet-5-5', input_tokens: 2000, output_tokens: 20000, cache_read_input_tokens: 1000000, cache_creation_input_tokens: 100000 }, 'bg1')
   await $.turn.complete({ answer: 'ok', durationMs: 2000, isAborted: false, turnId: 't1', agentId: 'bg1', reason: 'answer', usage: { model: 'claude-haiku-5-5', input_tokens: 1000, output_tokens: 500, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } })
   const second = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect(await second.find({ type: 'Text', text: /^running$/ })).toBeUndefined()
   // 2000 + 20000 + 1000000 + 100000 tokens; the turn.complete usage adds nothing more.
-  expect((await second.find({ type: 'Text', text: /^1\.1M tokens/ }))?.text).toMatch(/^1\.1M tokens · \d+s · \$0\.65$/)
+  expect((await second.find({ type: 'Text', text: '1.1M' }))?.text).toBe('1.1M')
+  expect((await second.find({ type: 'Text', text: '$0.65' }))?.text).toBe('$0.65')
+  expect((await second.find({ type: 'Text', text: /done ·/ }))?.text).toBe('4 of 4 done · 1.3M tokens')
 
   const modRows = (await second.findAll({ type: 'Text', text: /^(close-gate|goal-meter|session-panel|other)$/ })).map(one => one.text)
   expect(modRows).toEqual(['close-gate', 'goal-meter'])

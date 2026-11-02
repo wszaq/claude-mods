@@ -172,9 +172,15 @@ The pane has five cards. Each card opens or closes with its title, and keeps tha
 - **Used** shows one chip for each MCP server, skill, Web search, and Web fetch that the session used.
   The card does not show app servers (`ccd_*`) or servers that have an ID as their name.
 
-- **Subagents** shows one row for each Agent call with its description, model, tokens, time, and price.
-  A bar compares its tokens with the largest agent. A background agent shows "running"
-  until its turn ends.
+- **Subagents** shows one row for each Agent call with its description and model.
+  The first line of the card shows the rows that are done, the tokens of all rows, and
+  the total price when every row has a price.
+  While an agent runs, its critter walks along a track to a checkered finish line, and the
+  row shows "running" and the tokens so far. An agent has no known total, so the position
+  shows its time: it moves fast at first, then slower, and it reaches the line only when
+  the agent is done. The terminal draws the track as dots.
+  When the agent is done, the track changes to a KPI: the critter at the flag, then the tokens,
+  the time, and the price in bold.
   The tokens and the price are sums over all the model calls of that agent. The tokens include
   input, output, cache read, and cache write tokens. The Agent result gives the tokens of the last
   call only, so the card does not use that number.

@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderChildren, TurnUsage } from 'claude-code'
 
 import type { Agent, Card, Collapsed, Mod, Output, Step, Total } from '../types'
-import { COLOR_DIR, PAL, POSE, card as critterCard, chatColor, critter, hashColor, parseColor } from './critter.mjs'
+import { COLOR_DIR, PAL, POSE, card as critterCard, chatColor, critter, critterSvg, hashColor, parseColor } from './critter.mjs'
 
 const PANE = 'session'
 const TITLE = 'Session'
@@ -82,10 +82,50 @@ const priceOf = (usage: TurnUsage) => {
   const cost = usage.input_tokens * input + usage.cache_creation_input_tokens * input * 1.25 + usage.cache_read_input_tokens * read + usage.output_tokens * output
   return (cost * scale) / 1e6
 }
-// The price at the end of a Subagents line; none while it is unknown.
-const priceText = (usd?: number | null) => (typeof usd !== 'number' ? '' : usd < 0.01 ? ' · <$0.01' : ` · $${usd.toFixed(2)}`)
-// A finished row: the tokens of all its model calls, its time and its price.
-const doneText = (total: Total | undefined, ms: number) => `${total ? `${kTokens(total.tokens)} tokens · ` : ''}${duration(ms)}${priceText(total?.usd)}`
+// A finished row's KPI as [value, label]: the tokens of all its model calls, its time and its price.
+// Tokens and price only where known.
+const kpis = (total: Total | undefined, ms: number): [string, string][] => [
+  ...(total ? [[kTokens(total.tokens), 'tokens'] as [string, string]] : []),
+  [duration(ms), ''],
+  ...(typeof total?.usd === 'number' ? [[total.usd < 0.01 ? '<$0.01' : `$${total.usd.toFixed(2)}`, ''] as [string, string]] : []),
+]
+
+// A subagent's track: its critter walks from the left toward the finish line while it runs.
+// A subagent has no known total, so the walk follows its time: fast at first, slower later,
+// and it reaches the line only when the agent is done. SMIL moves it between redraws;
+// begin="-Ns" starts each redraw as far along as the agent's time.
+const TRACK_W = 320
+const TRACK_H = 24
+const FINISH = TRACK_W - 10
+const CRITTER_H = 18
+const WALK_S = 600
+const WALK_AT = [0, 5, 10, 20, 40, 60, 90, 120, 180, 240, 360, 480, 600]
+const along = (seconds: number) => 1 - Math.exp(-seconds / 90)
+// A checkered flag on its pole, the pole at x.
+const finishFlag = (x: number) =>
+  `<path d="M${x} 1 V${TRACK_H - 2}" stroke="${PAL.gray}" stroke-width="1"/>` +
+  [0, 1, 2].flatMap(col => [0, 1].map(row =>
+    `<rect x="${x + 0.5 + col * 2.5}" y="${1 + row * 2.5}" width="2.5" height="2.5" fill="${(col + row) % 2 ? PAL.eye : '#FFFFFF'}"/>`)).join('') +
+  `<rect x="${x + 0.5}" y="1" width="7.5" height="5" fill="none" stroke="${PAL.gray}" stroke-width=".5"/>`
+// The critter comes first: the avatar's body color is the first fill of the drawing.
+const walkSvg = (body: string, seconds: number) => {
+  const one = critterSvg({ ...POSE.working, body }, CRITTER_H)
+  const room = FINISH - one.width - 4
+  const xs = WALK_AT.map(t => room * along(t))
+  const timing = `begin="-${seconds}s" dur="${WALK_S}s" keyTimes="${WALK_AT.map(t => t / WALK_S).join(';')}" fill="freeze"`
+  const walker = `<g>${one.source}<animateTransform attributeName="transform" type="translate" values="${xs.map(x => `${x.toFixed(1)} 0`).join(';')}" ${timing}/></g>`
+  const ground = `<path d="M0 ${CRITTER_H + 2} H${FINISH}" stroke="${PAL.gray}" stroke-opacity=".5" stroke-dasharray="2 3"/>`
+  const trail = `<rect y="${CRITTER_H + 1}" height="2" rx="1" width="0" fill="${body}" opacity=".55"><animate attributeName="width" values="${xs.map(x => (x + one.width / 2).toFixed(1)).join(';')}" ${timing}/></rect>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${TRACK_W}" height="${TRACK_H}" viewBox="0 0 ${TRACK_W} ${TRACK_H}">${walker}${ground}${trail}${finishFlag(FINISH)}</svg>`
+}
+// Done: the critter past the line, happy, by the flag. The flag is the track's, not the pose's.
+const DONE_POSE = { ...POSE.done, acc: ['sparkle'] }
+const finishSvg = (body: string) => {
+  const one = critterSvg({ ...DONE_POSE, body }, CRITTER_H)
+  const width = one.width + 12
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${TRACK_H}" viewBox="0 0 ${width} ${TRACK_H}"><g transform="translate(0 2)">${one.source}</g>${finishFlag(one.width + 3)}</svg>`
+}
+const TRACK_CELLS = 20
 
 // This chat's color and its name: Cache Keeper's file for it, else the id's own color, as Nate's mods do.
 async function chatHex($: EngineInterface): Promise<{ hex: string; name: string }> {
@@ -390,7 +430,12 @@ export const register: Register = on => {
     const sums = await read($, totals)
     const modList = await read($, mods)
     const tokensOf = (one: Agent) => sums[one.agentId ?? '']?.tokens ?? 0
-    const most = Math.max(1, ...agentList.map(tokensOf))
+    // The Subagents card's own KPI: the rows done, all their tokens, and the price once every row has one.
+    const allUsd = agentList.map(one => sums[one.agentId ?? '']?.usd)
+    const summary = `${agentList.filter(one => one.isDone).length} of ${agentList.length} done · ${kTokens(agentList.reduce((sum, one) => sum + tokensOf(one), 0))} tokens${
+      allUsd.every(usd => typeof usd === 'number') ? ` · $${allUsd.reduce((sum: number, usd) => sum + (usd ?? 0), 0).toFixed(2)}` : ''
+    }`
+    const isGraphic = !!Svg && e.surface !== 'terminal'
     // The chat's critter shows what the task list says: a step in progress, all steps done, or neither.
     const isWorking = stepList.some(step => step.status === 'in_progress')
     const isFinished = stepList.length > 0 && stepList.every(step => step.status === 'completed')
@@ -472,23 +517,60 @@ export const register: Register = on => {
           agentList.length === 0 ? (
             <Text dimColor>No subagents yet.</Text>
           ) : (
-            agentList.map(one => (
-              <Box key={`agent-${one.id}`} flexDirection="column" marginBottom={1}>
-                <Box flexDirection="row" justifyContent="space-between" gap={1}>
-                  <Box flexDirection="row" gap={1} flexShrink={1}>
-                    {critter(elements, e.surface, familyColor(one.model), one.isDone ? POSE.done : POSE.working, 16, one.name)}
-                    <Text wrap="truncate-end">{one.name}</Text>
+            [
+              <Box key="agents-summary" marginBottom={1}>
+                <Text dimColor>{summary}</Text>
+              </Box>,
+              ...agentList.map(one => {
+                const body = familyColor(one.model)
+                const seconds = Math.max(0, Math.round((Date.now() - one.startedAt) / 1000))
+                const at = Math.round(along(seconds) * TRACK_CELLS)
+                return (
+                  <Box key={`agent-${one.id}`} flexDirection="column" marginBottom={1}>
+                    <Box flexDirection="row" justifyContent="space-between" gap={1}>
+                      <Box flexShrink={1}>
+                        <Text wrap="truncate-end">{one.name}</Text>
+                      </Box>
+                      <Text dimColor>{one.model ? shortModel(one.model) : '…'}</Text>
+                    </Box>
+                    {one.isDone ? (
+                      <Box flexDirection="row" alignItems="center" gap={2} flexWrap="wrap">
+                        {Svg && isGraphic ? (
+                          <Svg source={finishSvg(body)} alt={one.name} />
+                        ) : (
+                          <Box flexDirection="row">
+                            {critter(elements, e.surface, body, DONE_POSE, CRITTER_H, one.name)}
+                            <Text dimColor>┃</Text>
+                          </Box>
+                        )}
+                        {kpis(sums[one.agentId ?? ''], one.ms).map(([value, label]) => (
+                          <Box key={`kpi-${value}-${label}`} flexDirection="row" gap={1}>
+                            <Text bold>{value}</Text>
+                            {label !== '' && <Text dimColor>{label}</Text>}
+                          </Box>
+                        ))}
+                      </Box>
+                    ) : (
+                      [
+                        Svg && isGraphic ? (
+                          <Svg key="track" source={walkSvg(body, seconds)} alt={one.name} />
+                        ) : (
+                          <Box key="track" flexDirection="row">
+                            <Text dimColor>{'·'.repeat(at)}</Text>
+                            {critter(elements, e.surface, body, POSE.working, CRITTER_H, one.name)}
+                            <Text dimColor>{`${'·'.repeat(TRACK_CELLS - at)}┃`}</Text>
+                          </Box>
+                        ),
+                        <Box key="status" flexDirection="row">
+                          <Text dimColor>running</Text>
+                          {tokensOf(one) > 0 && <Text dimColor>{` · ${kTokens(tokensOf(one))} tokens`}</Text>}
+                        </Box>,
+                      ]
+                    )}
                   </Box>
-                  <Text dimColor>{one.model ? shortModel(one.model) : '…'}</Text>
-                </Box>
-                <Text dimColor>
-                  {one.isDone ? doneText(sums[one.agentId ?? ''], one.ms) : 'running'}
-                </Text>
-                <Box flexDirection="row" height={1}>
-                  <Box width={`${Math.max(2, Math.round((tokensOf(one) / most) * 100))}%`} backgroundColor={one.isDone ? 'suggestion' : 'inactive'} />
-                </Box>
-              </Box>
-            ))
+                )
+              }),
+            ]
           ),
         )}
         {card(
