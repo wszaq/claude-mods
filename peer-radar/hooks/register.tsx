@@ -1,10 +1,13 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, RenderElement } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 import type { Board, Radar, Repo } from '../types'
 import { parseBoard, parseCounts, quote, relayTarget, statusText } from './helpers'
+import { card, mark, type Mark } from './look'
 
 const PANE = 'peer-radar'
 const radarState = atom({ plugin: 'peer-radar', key: 'radar' } as const, null as Radar | null)
+const collapsed = atom({ plugin: 'peer-radar', key: 'collapsed' } as const, {} as Record<string, boolean>)
+const STATE: Record<string, Mark> = { BUSY: 'active', ACTIVE: 'active', IDLE: 'idle' }
 const LIST = 'python3 ~/.claude/hooks/session-register.py --list'
 const VAULT = 'systemctl --user show sh-vault-stable-sync.service -p Result -p ActiveEnterTimestamp --value'
 const JOURNAL = 'journalctl --user -u sh-vault-stable-sync -n 40 --no-pager'
@@ -92,6 +95,8 @@ export const register: Register = (on, options) => {
     await $.command.register({ name: 'relay', description: 'Relay text to a local or peer session', argumentHint: '<short-id> <text>' })
     if (e.isInteractive === false) return next(e)
     try {
+      const saved = await $.store.get('collapsed') as Record<string, boolean> | undefined
+      if (saved) await update($, collapsed, () => saved)
       const os = await run($, ['uname', '-s'])
       runtime.platform = os.stdout.trim()
       const home = await $.env.get('HOME')
@@ -130,23 +135,49 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const kit = $.ui.resolve(e)
+    const { Box, Text, Button } = kit
     const radar = await read($, radarState)
+    const shut = await read($, collapsed)
     const now = await $.clock.now()
-    const rows = [<Button key="refresh" label="Refresh" onPress={() => collect($, runtime)} />]
-    if (!radar) rows.push(<Text>Waiting for the first collection.</Text>)
-    else {
-      rows.push(<Text>This machine ({radar.platform === 'Darwin' ? 'macOS' : 'Linux'})</Text>)
-      rows.push(...radar.local.sessions.map(s => <Text>{s.state} {s.id} {s.workspace} {s.age} {s.claim}</Text>))
-      rows.push(...radar.local.raw.map(line => <Text>{line}</Text>))
-      rows.push(<Text>Peer</Text>)
-      if (radar.peer.error) rows.push(<Text>{radar.peer.error}</Text>)
-      rows.push(...radar.peer.sessions.map(s => <Text>{s.state} {s.id} {s.workspace} {s.age} {s.claim}</Text>))
-      rows.push(...radar.peer.raw.map(line => <Text>{line}</Text>))
-      rows.push(<Text>Sync</Text>)
-      rows.push(...radar.repos.map(repo => <Text>{repo.name}: ahead {repo.ahead}, behind {repo.behind}, dirty {repo.dirty}, fetched {repo.fetchedAt === undefined ? 'never' : `${Math.floor((now - repo.fetchedAt) / 60000)}m ago`}</Text>))
-      if (radar.vault) rows.push(<Text>Vault: {radar.vault.blocked ? 'BLOCKED' : radar.vault.result} {radar.vault.active}</Text>)
-    }
-    return h(Box, { flexDirection: 'column' }, ...rows) as RenderElement
+    const fold = (id: string) => ({
+      isShut: shut[id] === true,
+      onToggle: async () => {
+        const value = await update($, collapsed, all => ({ ...all, [id]: !all[id] }))
+        await $.store.set('collapsed', value)
+      },
+    })
+    const refresh = <Button key="refresh" plain onPress={() => collect($, runtime)}><Text dimColor>↻ Refresh</Text></Button>
+    if (!radar) return <Box flexDirection="column"><Text dimColor>Waiting for the first collection.</Text>{refresh}</Box>
+    const board = (id: string, title: string, b: Board) => card(kit, id, title, [
+      b.error === 'disabled' && <Text key="error" dimColor>{mark(kit, 'idle')} Peer is disabled.</Text>,
+      b.error && b.error !== 'disabled' && <Text key="error">{mark(kit, 'fail')} {b.error}</Text>,
+      ...b.sessions.map(s => (
+        <Box key={`session-${s.id}`} flexDirection="row" gap={1}>
+          <Text>{mark(kit, STATE[s.state.toUpperCase()] ?? 'warn')} {s.id}</Text>
+          <Text dimColor>{s.state} {s.age} {s.workspace}</Text>
+          <Text wrap="truncate-end">{s.claim}</Text>
+        </Box>
+      )),
+      ...b.raw.map((line, i) => <Text key={`raw-${i}`} dimColor>{line}</Text>),
+      !b.error && b.sessions.length === 0 && b.raw.length === 0 && <Text key="none" dimColor>No sessions.</Text>,
+    ], fold(id))
+    const clean = (repo: Repo) => repo.ahead === 0 && repo.behind === 0 && repo.dirty === 0
+    return (
+      <Box flexDirection="column">
+        {board('local', `This machine (${radar.platform === 'Darwin' ? 'macOS' : 'Linux'})`, radar.local)}
+        {board('peer', 'Peer', radar.peer)}
+        {card(kit, 'sync', 'Sync', radar.repos.length === 0 ? <Text dimColor>No repositories configured.</Text> : radar.repos.map(repo => (
+          <Box key={`repo-${repo.name}`} flexDirection="row" gap={1}>
+            <Text>{mark(kit, clean(repo) ? 'done' : 'warn')} {repo.name}: ahead {repo.ahead}, behind {repo.behind}, dirty {repo.dirty}</Text>
+            <Text dimColor>fetched {repo.fetchedAt === undefined ? 'never' : `${Math.floor((now - repo.fetchedAt) / 60000)}m ago`}</Text>
+          </Box>
+        )), fold('sync'))}
+        {radar.vault && card(kit, 'vault', 'Vault', (
+          <Text>{mark(kit, radar.vault.blocked ? 'fail' : 'done')} {radar.vault.blocked ? 'BLOCKED' : radar.vault.result} <Text dimColor>{radar.vault.active}</Text></Text>
+        ), fold('vault'))}
+        {refresh}
+      </Box>
+    )
   })
 }

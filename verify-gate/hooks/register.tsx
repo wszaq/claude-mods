@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { CheckView } from '../types'
+import { card, mark } from './look'
 
 const changed = atom({ plugin: 'verify-gate', key: 'changed' } as const, [] as string[])
 const enabled = atom({ plugin: 'verify-gate', key: 'enabled' } as const, true)
@@ -220,21 +221,25 @@ export const register: Register = on => {
     try {
       const last = await read($, view)
       if (e.props.hasSurvey || !last) return next(e)
-      const { Box, Text, Button } = $.ui.resolve(e)
+      const kit = $.ui.resolve(e)
+      const { Box, Text, Button } = kit
       const age = last.kind === 'pass' ? ` ${Math.floor(((await $.clock.now()) - last.at) / 1000)}s ago` : ''
       const flags = last.flags === undefined ? '' : ` — ${last.flags} ${last.flags === 1 ? 'flag' : 'flags'}`
-      const label = last.kind === 'running' ? `verify-gate: running… ${last.name}` : last.kind === 'pass' ? `verify-gate: ✓ ${last.name}${age}${flags}` : `verify-gate: ✗ ${last.name} exit ${last.exitCode}${flags}`
+      const label = last.kind === 'running' ? <Text>verify-gate: {mark(kit, 'active')} running… {last.name}</Text>
+        : last.kind === 'pass' ? <Text dimColor>verify-gate: {mark(kit, 'done')} {last.name}{age}{flags}</Text>
+        : <Text>verify-gate: {mark(kit, 'fail')} {last.name} exit {last.exitCode}{flags}</Text>
       const below = await next(e)
-      const mine = <Box columnGap={2}><Text dimColor={last.kind === 'pass'}>{label}</Text>{last.kind === 'fail' && <Box flexShrink={0} columnGap={2}><Button key="log" label="log" hotkey="l" plain onPress={() => $.ui.open({ id: logPane, title: 'verify-gate log' })} /><Button key="rerun" label="rerun" hotkey="r" plain onPress={() => runManual($)} /></Box>}</Box>
+      const mine = <Box columnGap={2}>{label}{last.kind === 'fail' && <Box flexShrink={0} columnGap={2}><Button key="log" label="log" hotkey="l" plain onPress={() => $.ui.open({ id: logPane, title: 'verify-gate log' })} /><Button key="rerun" label="rerun" hotkey="r" plain onPress={() => runManual($)} /></Box>}</Box>
       return <Box flexDirection="column">{mine}{below}</Box>
     } catch { return next(e) }
   })
 
   on('ui.render', { component: 'Pane', requestId: logPane }, async ($, e, next) => {
     try {
-      const { Text } = $.ui.resolve(e)
+      const kit = $.ui.resolve(e)
+      const { Text } = kit
       const last = await read($, view)
-      return <Text>{last?.output.split('\n').slice(-60).join('\n') || 'verify-gate: no output'}</Text>
+      return card(kit, 'log', last ? `Last check: ${last.name}` : 'Last check', <Text key="output">{last?.output.split('\n').slice(-60).join('\n') || 'verify-gate: no output'}</Text>)
     } catch { return next(e) }
   })
 

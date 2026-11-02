@@ -1,6 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 import type { Facts } from '../types'
+import { mark } from './look'
 
 const facts = atom({ plugin: 'close-gate', key: 'facts' } as const, null)
 const hidden = atom({ plugin: 'close-gate', key: 'hidden' } as const, false)
@@ -133,11 +134,12 @@ export const register: Register = on => {
     try {
       const f = await read($, facts)
       if (!f || e.props.hasSurvey || await read($, hidden)) return next(e)
-      const { Box, Text, Button } = $.ui.resolve(e)
+      const kit = $.ui.resolve(e)
+      const { Box, Text, Button } = kit
       const clear = !f.changed && !f.ahead && !f.behind && !f.worktrees && !f.ports.length && !f.openItems
       const below = await next(e)
       if (clear) return below
-      const mine = <Box columnGap={2}><Text>{bandText(f, await $.clock.now())}{' '}</Text><Box flexShrink={0}><Button key="hide" label="Hide" hotkey="x" plain onPress={() => update($, hidden, () => true)} /></Box></Box>
+      const mine = <Box columnGap={2}><Text>{mark(kit, 'warn')} {bandText(f, await $.clock.now())}{' '}</Text><Box flexShrink={0}><Button key="hide" label="Hide" hotkey="x" plain onPress={() => update($, hidden, () => true)} /></Box></Box>
       return <Box flexDirection="column">{mine}{below}</Box>
     } catch { return next(e) }
   })

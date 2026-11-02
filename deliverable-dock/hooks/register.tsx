@@ -1,6 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 import type { Deliverable } from '../types'
+import { card, mark } from './look'
 
 const PANE = 'deliverable-dock'
 const files = atom({ plugin: 'deliverable-dock', key: 'files' } as const, [] as Deliverable[])
@@ -137,11 +138,12 @@ export const register: Register = (on, options) => {
     try {
       const path = await read($, band)
       if (!path || e.props.hasSurvey) return next(e)
-      const { Box, Text, Button } = $.ui.resolve(e)
+      const kit = $.ui.resolve(e)
+      const { Box, Text, Button } = kit
       const below = await next(e)
       const item = (await read($, files)).find(one => one.path === path)
       if (!item) return below
-      const mine = <Box columnGap={2}><Text>📦 {pathParts(path).name} </Text><Box flexShrink={0} columnGap={2}><Button key="ship" label="ship" hotkey="s" plain onPress={() => ship($, home, opener, item)} /><Button key="open" label="open" hotkey="o" plain onPress={() => open($, opener, path)} /><Button key="dismiss" label="dismiss" hotkey="n" plain onPress={() => update($, band, current => current === path ? null : current)} /></Box></Box>
+      const mine = <Box columnGap={2}><Text>{mark(kit, 'done')} {pathParts(path).name} </Text><Box flexShrink={0} columnGap={2}><Button key="ship" label="ship" hotkey="s" plain onPress={() => ship($, home, opener, item)} /><Button key="open" label="open" hotkey="o" plain onPress={() => open($, opener, path)} /><Button key="dismiss" label="dismiss" hotkey="n" plain onPress={() => update($, band, current => current === path ? null : current)} /></Box></Box>
       return <Box flexDirection="column">{mine}{below}</Box>
     } catch { return next(e) }
   })
@@ -156,24 +158,23 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const kit = $.ui.resolve(e)
+    const { Box, Text, Button } = kit
     const list = await read($, files)
     const now = await $.clock.now()
-    return <Box flexDirection="column">
-      {list.length === 0 && <Text>No deliverables recorded in this session yet.</Text>}
-      {list.map((item, index) => {
-        const { folder, name } = pathParts(item.path)
-        const age = Math.max(0, Math.floor((now - item.recordedAt) / 1000))
-        return <Box key={item.path} flexDirection="column">
-          <Text>{name}  {folder}  {age}s ago</Text>
-          <Box>
-            <Button key={`open-${index}`} label="Open" onPress={() => open($, opener, item.path)} />
-            <Button key={`reveal-${index}`} label="Reveal" onPress={() => $.process.run(opener === 'open' ? ['open', '-R', item.path] : ['xdg-open', folder])} />
-            <Button key={`copy-${index}`} label="Copy path" onPress={() => $.ui.copy({ text: item.path, surface: e.surface })} />
-            <Button key={`ship-${index}`} label="Ship" onPress={() => ship($, home, opener, item)} />
-          </Box>
+    return card(kit, 'deliverables', 'Deliverables', list.length === 0 ? <Text dimColor>No deliverables recorded in this session yet.</Text> : list.map((item, index) => {
+      const { folder, name } = pathParts(item.path)
+      const age = Math.max(0, Math.floor((now - item.recordedAt) / 1000))
+      return <Box key={item.path} flexDirection="column" marginBottom={1}>
+        <Text>{mark(kit, 'done')} {name}</Text>
+        <Text dimColor>{folder} · {age}s ago</Text>
+        <Box columnGap={2}>
+          <Button key={`open-${index}`} label="Open" plain onPress={() => open($, opener, item.path)} />
+          <Button key={`reveal-${index}`} label="Reveal" plain onPress={() => $.process.run(opener === 'open' ? ['open', '-R', item.path] : ['xdg-open', folder])} />
+          <Button key={`copy-${index}`} label="Copy path" plain onPress={() => $.ui.copy({ text: item.path, surface: e.surface })} />
+          <Button key={`ship-${index}`} label="Ship" plain onPress={() => ship($, home, opener, item)} />
         </Box>
-      })}
-    </Box>
+      </Box>
+    }))
   })
 }

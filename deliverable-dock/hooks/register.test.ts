@@ -114,6 +114,8 @@ test('pane shows rows and actions on terminal and desktop', async ($, on) => {
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'deliverable-dock', surface, component: 'Pane', requestId: 'deliverable-dock', props: PANE })
     expect(await ui.find({ text: 'a.pdf' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Deliverables' })).toBeDefined()
+    expect((await ui.find({ type: 'Text', text: /^✓$/ }))?.props.color).toBe('suggestion')
     for (const label of ['Open', 'Reveal', 'Copy path', 'Ship']) expect(await ui.find({ type: 'Button', text: label })).toBeDefined()
     await ui.unmount()
   }
@@ -133,8 +135,11 @@ test('headless session does not record Write or Bash deliverables', async ($, on
   await $.tool.call({ tool: 'Write', file_path: '/work/a.pdf', content: '' })
   await $.tool.call({ tool: 'Bash', command: 'build /work/b.pdf' })
   await clock.settle()
-  const ui = await $.ui.mount({ plugin: 'deliverable-dock', surface: 'terminal', component: 'Pane', requestId: 'deliverable-dock', props: PANE })
-  expect(await ui.find({ text: 'No deliverables recorded in this session yet.' })).toBeDefined()
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'deliverable-dock', surface, component: 'Pane', requestId: 'deliverable-dock', props: PANE })
+    expect(await ui.find({ text: 'No deliverables recorded in this session yet.' })).toBeDefined()
+    await ui.unmount()
+  }
   expect(runs).toBe(0)
   expect(stats).toBe(0)
 })
@@ -158,6 +163,7 @@ test('band actions keep MARKER and ship clears the band', async ($, on) => {
   await $.session.start(START)
   await $.tool.call({ tool: 'Write', file_path: '/work/a.pdf', content: '' })
   expect(await ui.find({ type: 'Text', text: 'MARKER' })).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /^✓$/ }))?.props.color).toBe('suggestion')
   for (const label of ['ship', 'open', 'dismiss']) expect(await ui.find({ type: 'Button', text: label })).toBeDefined()
   for (const key of ['s', 'o', 'n']) expect(JSON.stringify(await ui.drawn())).toContain(`"hotkey":"${key}"`)
   await ui.press({ key: 'open' })

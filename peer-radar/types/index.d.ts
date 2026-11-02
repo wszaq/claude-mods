@@ -5,6 +5,6 @@ export type Radar = { local: Board; peer: Board; repos: Repo[]; vault?: { result
 
 declare module 'claude-code' {
   interface PluginState {
-    'peer-radar': { radar: Radar | null }
+    'peer-radar': { radar: Radar | null; collapsed: Record<string, boolean> }
   }
 }

@@ -1,8 +1,10 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 import type { Tip } from '../types'
+import { card, mark } from './look'
 
 const tips = atom({ plugin: 'waste-alarm', key: 'tips' } as const, [] as Tip[])
+const collapsed = atom({ plugin: 'waste-alarm', key: 'collapsed' } as const, {} as Record<string, boolean>)
 const builtInIgnore = ['git status', 'git diff', 'git log', 'ls', 'pwd', 'cat', 'head', 'tail', 'wc', 'echo', 'cd', 'sed -n', 'grep', 'find', 'python3 -c']
 const pane = 'waste-alarm'
 
@@ -54,6 +56,8 @@ export const register: Register = (on, options) => {
     try {
       await $.command.register({ name: 'waste', description: 'Show repeated commands and token tips', argumentHint: '[ignore <command>|dismiss]' })
       if (!interactive) return next(e)
+      const saved = await $.store.get('collapsed') as Record<string, boolean> | undefined
+      if (saved) await update($, collapsed, () => saved)
       const cutoff = new Date(await $.clock.now())
       cutoff.setDate(cutoff.getDate() - 7)
       const oldest = day(cutoff.getTime())
@@ -147,9 +151,10 @@ export const register: Register = (on, options) => {
     try {
       const current = await read($, tips)
       if (e.props.hasSurvey || current.length === 0) return next(e)
-      const { Box, Text, Button } = $.ui.resolve(e)
+      const kit = $.ui.resolve(e)
+      const { Box, Text, Button } = kit
       const below = await next(e)
-      const mine = <Box columnGap={2}><Text dimColor>waste-alarm: {current.length} new tips </Text><Box flexShrink={0} columnGap={2}><Button key="tips" label="tips" hotkey="w" plain onPress={() => $.ui.open({ id: pane, title: 'waste-alarm' })} /><Button key="dismiss" label="Dismiss" hotkey="d" plain onPress={() => dismiss($)} /></Box></Box>
+      const mine = <Box columnGap={2}><Text>{mark(kit, 'warn')} waste-alarm: {current.length} new tips </Text><Box flexShrink={0} columnGap={2}><Button key="tips" label="tips" hotkey="w" plain onPress={() => $.ui.open({ id: pane, title: 'waste-alarm' })} /><Button key="dismiss" label="Dismiss" hotkey="d" plain onPress={() => dismiss($)} /></Box></Box>
       return <Box flexDirection="column">{mine}{below}</Box>
     } catch { return next(e) }
   })
@@ -164,18 +169,30 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'Pane', requestId: pane }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
+    const kit = $.ui.resolve(e)
+    const { Box, Text } = kit
     const current = await read($, tips)
+    const shut = await read($, collapsed)
     const today = day(await $.clock.now())
     const counts = (await $.store.get(`counts:${today}`) as Record<string, number> | undefined) ?? {}
     const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 10)
+    const fold = (id: string) => ({
+      isShut: shut[id] === true,
+      onToggle: async () => {
+        const value = await update($, collapsed, all => ({ ...all, [id]: !all[id] }))
+        await $.store.set('collapsed', value)
+      },
+    })
     return <Box flexDirection="column">
-      <Text>Tips</Text>
-      {current.length === 0 && <Text dimColor>No new tips.</Text>}
-      {current.map(tip => <Text key={tip.title}>[{tip.category}] {tip.title}: {tip.body}</Text>)}
-      <Text>Today's repeated commands</Text>
-      {top.length === 0 && <Text dimColor>No commands counted.</Text>}
-      {top.map(([command, count]) => <Text key={command}>{count} {command}</Text>)}
+      {card(kit, 'tips', 'Tips', current.length === 0 ? <Text dimColor>No new tips.</Text> : current.map(tip => (
+        <Box key={`tip-${tip.title}`} flexDirection="column" marginBottom={1}>
+          <Text>{mark(kit, 'warn')} {tip.title} <Text dimColor>{tip.category}</Text></Text>
+          <Text dimColor>{tip.body}</Text>
+        </Box>
+      )), fold('tips'))}
+      {card(kit, 'commands', "Today's repeated commands", top.length === 0 ? <Text dimColor>No commands counted.</Text> : top.map(([command, count]) => (
+        <Text key={`command-${command}`}><Text bold color="claude">{count}</Text> {command}</Text>
+      )), fold('commands'))}
     </Box>
   })
 }

@@ -40,6 +40,8 @@ The mod runs `cli.py scan` and `cli.py tips` with a separate database:
 It checks tips after 30 seconds and every two hours. A shared timestamp limits scans to once per 100 minutes.
 Dismissed tip titles remain dismissed when their numeric counts change.
 The tips button uses `w`. Dismiss uses `d`.
+The pane has two cards: Tips and Today's repeated commands.
+Each card opens or closes with its title, and keeps that state across sessions.
 
 ## verify-gate
 
@@ -93,6 +95,9 @@ SSH uses batch mode and a five-second connection timeout.
 Configured repositories can receive `git fetch -q`, at most once per ten minutes across sessions.
 The mod reads upstream counts and uncommitted paths. It does not commit or merge.
 The mod omits repositories without an upstream.
+The board has cards for this machine, the peer, Sync, and Vault when the vault row is present.
+Each card opens or closes with its title, and keeps that state across sessions.
+In Sync, ✓ marks a clean repository and a yellow ● marks one that is ahead, behind, or dirty.
 
 An optional vault row reads the Linux user service `sh-vault-stable-sync` and its recent journal.
 On macOS, this row uses the configured SSH peer. The service is not included here.

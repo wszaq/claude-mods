@@ -145,3 +145,37 @@ test('default configuration does not contact a peer or fetch personal repositori
   expect(calls.some(argv => argv[0] === 'ssh')).toBe(false)
   expect(calls.some(argv => argv.includes('fetch'))).toBe(false)
 })
+
+test('collected pane draws cards with colored marks and folds a card', { options: { peerHost: 'off' } }, async ($, on) => {
+  const clock = mock.clock(on, { now: 600000 })
+  const store = new Map<string, unknown>()
+  on('store.get', ($, e) => ({ value: store.get(e.key) }))
+  on('store.set', ($, e) => { store.set(e.key, e.value); return { value: undefined } })
+  mock.env(on, { HOME: '/Users/test' })
+  on('process.run', ($, e) => {
+    const stdout = e.argv[0] === 'uname' ? 'Darwin\n' : e.argv.includes('--list') ? table : ''
+    return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('fs.exists', () => ({ value: false }))
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  await clock.advance(5000)
+  const props = { title: 'Peer radar', isFocused: true, bodyColumns: 80, placement: 'inline', scroll: { bodyRows: 20, offset: 0 }, view: {} } as const
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'peer-radar', surface, component: 'Pane', requestId: 'peer-radar', props })
+    expect(await ui.find({ type: 'Text', text: 'This machine (macOS)' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Peer is disabled.' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'No repositories configured.' })).toBeDefined()
+    expect((await ui.findAll({ type: 'Text', text: /^[●○✓✗]$/ })).map(one => one.props.color)).toEqual(['claude', 'inactive', 'inactive'])
+    expect(await ui.find({ key: 'refresh' })).toBeDefined()
+    await ui.unmount()
+  }
+  const ui = await $.ui.mount({ plugin: 'peer-radar', surface: 'desktop', component: 'Pane', requestId: 'peer-radar', props })
+  await ui.press({ key: 'toggle-local' })
+  expect(await ui.find({ type: 'Text', text: /a1b2/ })).toBeUndefined()
+  expect(store.get('collapsed')).toEqual({ local: true })
+  await ui.press({ key: 'toggle-local' })
+  expect(await ui.find({ type: 'Text', text: /a1b2/ })).toBeDefined()
+})

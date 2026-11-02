@@ -57,6 +57,7 @@ test('band shows changed, unpushed and open items', async ($, on) => {
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'close-gate', surface, component: 'AbovePrompt', props: BAND })
     expect(await ui.find({ type: 'Text', text: /2 changed · 2 unpushed · open items 2/ })).toBeDefined()
+    expect((await ui.find({ type: 'Text', text: /^●$/ }))?.props.color).toBe('warning')
     expect(await ui.find({ type: 'Text', text: 'MARKER' })).toBeDefined()
     await ui.unmount()
   }
