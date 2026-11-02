@@ -253,3 +253,24 @@ test('the pane opens at session start when /session is a built-in', async ($, on
   await $.session.start({ cwd: '/work/proj', surface: 'desktop', isInteractive: true })
   expect(opened).toEqual(['session'])
 })
+
+// In the Desktop app a pane opened at session start can be placed but out of sight: the command must show it, not close it.
+test('/session-panel shows a placed pane again and closes only on request', async ($, on) => {
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('command.list', () => ({ value: [] }))
+  on('store.get', () => ({ value: undefined }))
+  on('settings.read', () => ({ value: {} }))
+  const calls: string[] = []
+  on('ui.open', (_, e) => { calls.push(`open ${e.id}`); return { value: { isPlaced: true } } })
+  on('ui.close', (_, e) => { calls.push(`close ${e.id}`); return { value: undefined } })
+  on('ui.panes', () => ({ value: [{ id: 'session', title: 'Session', isShown: true, isFocused: false, isPlaced: true }] }))
+  await $.session.start({ cwd: '/work/proj', surface: 'desktop', isInteractive: true })
+  calls.length = 0
+  const request = { origin: { kind: 'composer' } as const, presentation: { isFullscreen: false, columns: 80 } }
+  expect((await $.command.run({ command: 'session-panel', args: '', ...request })).text).toBe('Session pane opened.')
+  expect(calls).toEqual(['close session', 'open session'])
+  calls.length = 0
+  expect((await $.command.run({ command: 'session-panel', args: 'close', ...request })).text).toBe('Session pane closed.')
+  expect(calls).toEqual(['close session'])
+})

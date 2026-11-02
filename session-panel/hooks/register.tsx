@@ -149,7 +149,7 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     cwd = e.cwd
     home = (await $.env.get('HOME').catch(() => undefined)) ?? ''
-    await $.command.register({ name: 'session-panel', description: 'Show or hide the Session pane' })
+    await $.command.register({ name: 'session-panel', description: 'Show the Session pane', argumentHint: '[close]' })
     const saved = (await $.store.get('collapsed').catch(() => undefined)) as Collapsed | undefined
     if (saved) await update($, collapsed, () => ({ ...OPEN, ...saved }))
     await loadMods($).catch(() => undefined)
@@ -160,12 +160,14 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'session-panel' }, async $ => {
-    const isOpen = (await $.ui.panes()).some(pane => pane.id === PANE && pane.isPlaced)
-    if (isOpen) {
+  on('command.run', { command: 'session-panel' }, async ($, e) => {
+    if (e.args.trim() === 'close') {
       await $.ui.close({ id: PANE })
       return { text: 'Session pane closed.' }
     }
+    // The Desktop app can hold the pane opened at session start placed but out of sight.
+    // Close it and open it as asked, the order that shows it there.
+    if ((await $.ui.panes()).some(pane => pane.id === PANE)) await $.ui.close({ id: PANE })
     await $.ui.open({ id: PANE, title: TITLE })
 
     return { text: 'Session pane opened.' }
