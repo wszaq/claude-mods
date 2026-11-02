@@ -165,7 +165,7 @@ export const register: Register = on => {
     try {
       home = await $.env.get('HOME') ?? ''
       platform = (await $.process.run(['uname', '-s'])).stdout.trim()
-      await $.command.register({ name: 'verify', description: 'Run or control the repo check.' })
+      await $.command.register({ name: 'verify-gate', description: 'Run or control the repo check.' })
     } catch { /* Verification must not stop the session. */ }
     return next(e)
   })
@@ -199,7 +199,7 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'verify' }, async ($, e) => {
+  on('command.run', { command: 'verify-gate' }, async ($, e) => {
     const arg = e.args.trim()
     if (arg === 'off') {
       await update($, enabled, () => false)
@@ -212,7 +212,7 @@ export const register: Register = on => {
       const last = await read($, view)
       return { text: last?.output.split('\n').slice(-60).join('\n') || 'verify-gate: no output' }
     }
-    if (arg) return { text: 'Usage: /verify [on|off|log]' }
+    if (arg) return { text: 'Usage: /verify-gate [on|off|log]' }
     return { text: await runManual($) }
   })
 
@@ -243,7 +243,7 @@ export const register: Register = on => {
       const last = await read($, view)
       if (last?.kind !== 'fail') return next(e)
       const modes = Array.isArray(e.props.modes) ? e.props.modes : []
-      return next({ ...e, props: { ...e.props, modes: [...modes, `verify ✗ ${last.name} · /verify log`] } })
+      return next({ ...e, props: { ...e.props, modes: [...modes, `verify ✗ ${last.name} · /verify-gate log`] } })
     } catch { return next(e) }
   })
 }

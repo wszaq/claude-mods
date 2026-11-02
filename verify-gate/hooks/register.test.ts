@@ -36,7 +36,7 @@ function fixture(on: On, files: Record<string, string>, exitCode = 0, delay = fa
   on('tool.call', { tool: 'Write' }, ($, e) => ({ result: { filePath: e.file_path } } as any))
   on('turn.complete', () => ({ text: '' }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
-  on('command.run', { command: 'verify' }, () => ({ text: '' }))
+  on('command.run', { command: 'verify-gate' }, () => ({ text: '' }))
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => $.ui.resolve(e).Text({ children: 'MARKER' }))
   return { clock, session, spawned, runs, setExitCode: (value: number) => { code = value }, setOutput: (value: string | undefined) => { output = value }, releaseProcess: () => release?.() }
 }
@@ -132,10 +132,10 @@ test('the same failure is noted once until its signature changes or a check pass
 
 test('off stops automatic runs', async ($, on) => {
   const kit = fixture(on, { '/repo/package.json': JSON.stringify({ scripts: { test: 'node test.js' } }) })
-  await $.command.run({ command: 'verify', args: 'off' } as any)
+  await $.command.run({ command: 'verify-gate', args: 'off' } as any)
   await editAndFinish($, kit.clock, '/repo/a.ts')
   expect(kit.spawned).toHaveLength(0)
-  await $.command.run({ command: 'verify', args: 'on' } as any)
+  await $.command.run({ command: 'verify-gate', args: 'on' } as any)
   await editAndFinish($, kit.clock, '/repo/a.ts')
   expect(kit.spawned).toHaveLength(1)
 })
@@ -166,7 +166,7 @@ test('Markdown outside git gets an advisory in its own directory and no test che
 test('manual verify runs despite a config match filter', async ($, on) => {
   const kit = fixture(on, { '/repo/.claude/verify.json': JSON.stringify({ command: ['make', 'check'], match: ['*.py'] }) })
   await $.session.start({ cwd: ROOT, surface: null, isInteractive: false })
-  await $.command.run({ command: 'verify', args: '' } as any)
+  await $.command.run({ command: 'verify-gate', args: '' } as any)
   await kit.clock.advance(0)
   expect(kit.spawned).toEqual([['make', 'check']])
 })
@@ -235,7 +235,7 @@ test('failed check offers log and rerun, keeps MARKER, and adds a footer mode', 
   await kit.clock.advance(0)
   expect(kit.spawned).toHaveLength(2)
   await $.ui.mount({ plugin: 'verify-gate', surface: 'desktop', component: 'SessionMode', props: { modes: ['earlier'] } as any })
-  expect(modes).toEqual(['earlier', 'verify ✗ npm test · /verify log'])
+  expect(modes).toEqual(['earlier', 'verify ✗ npm test · /verify-gate log'])
   kit.setExitCode(0)
   await editAndFinish($, kit.clock, '/repo/a.ts')
   expect(await band.find({ type: 'Button', text: 'log' })).toBeUndefined()
@@ -244,14 +244,27 @@ test('failed check offers log and rerun, keeps MARKER, and adds a footer mode', 
   expect(modes).toEqual(['earlier'])
 })
 
-test('log pane shows the same last 60 lines as /verify log', async ($, on) => {
+test('log pane shows the same last 60 lines as /verify-gate log', async ($, on) => {
   const kit = fixture(on, { '/repo/package.json': JSON.stringify({ scripts: { test: 'node test.js' } }) }, 1)
   kit.setOutput(Array.from({ length: 65 }, (_, index) => `line ${index + 1}`).join('\n'))
   await editAndFinish($, kit.clock, '/repo/a.ts')
-  const command = await $.command.run({ command: 'verify', args: 'log' } as any)
+  const command = await $.command.run({ command: 'verify-gate', args: 'log' } as any)
   const pane = await $.ui.mount({ plugin: 'verify-gate', surface: 'terminal', component: 'Pane', requestId: 'verify-gate-log', props: { title: 'verify-gate log', isFocused: true, bodyColumns: 80, placement: 'inline', scroll: { offset: 0, bodyRows: 20 }, view: {} } })
   const output = command.text ?? ''
   expect(output.split('\n')).toHaveLength(60)
   expect(output.startsWith('line 6\n')).toBe(true)
   expect((await pane.find({ type: 'Text' }))?.text).toBe(output)
+})
+
+// Claude Code 2.1.316 ships /verify and refuses a mod that registers a built-in's name.
+test('registers a command name that is not a built-in', async ($, on) => {
+  fixture(on, {})
+  const names: string[] = []
+  on('command.register', ($, e) => {
+    names.push(e.name)
+    if (e.name === 'verify') throw new Error('a built-in name')
+    return { value: { command: e.name } }
+  })
+  await $.session.start({ cwd: ROOT, surface: 'desktop', isInteractive: true })
+  expect(names).toEqual(['verify-gate'])
 })

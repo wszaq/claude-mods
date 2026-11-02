@@ -7,7 +7,7 @@ A mod observes session events and adds commands, status text, or a user interfac
 | --- | --- | --- |
 | close-gate | Show Git changes, development ports, and optional session claims | `/closeok` |
 | waste-alarm | Count repeated shell commands and show optional Token Dashboard tips | `/waste` |
-| verify-gate | Run repository checks after a turn that edits files | `/verify` |
+| verify-gate | Run repository checks after a turn that edits files | `/verify-gate` |
 | peer-radar | Show optional local and SSH peer session boards and repository sync state | `/radar`, `/relay` |
 | deliverable-dock | Record output files and copy a selected file to Downloads | `/ship` |
 | session-panel | Show the task list, files made for you, connectors, subagent tokens and prices, and a mod switchboard in one pane | `/session-panel` |

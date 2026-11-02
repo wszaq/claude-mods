@@ -38,13 +38,13 @@ Headless sessions do not start automatic UI work.
 
 ## Verify-gate runs no check
 
-Run `/verify on`. Run `/verify`.
+Run `/verify-gate on`. Run `/verify-gate`.
 Check that the working folder belongs to a Git repository.
 Check `.claude/verify.json` for valid JSON and a nonempty `command` array.
 Check that automatic edits match its `match` list.
 
 Install the selected command's runtime and dependencies.
-Read `/verify log` for failures.
+Read `/verify-gate log` for failures.
 
 ## Peer radar reports an error or no repositories
 

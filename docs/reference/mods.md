@@ -45,10 +45,10 @@ The tips button uses `w`. Dismiss uses `d`.
 
 | Command | Result |
 | --- | --- |
-| `/verify` | Schedule a repository check |
-| `/verify log` | Show the last 60 output lines |
-| `/verify off` | Disable checks and cancel active checks |
-| `/verify on` | Enable checks |
+| `/verify-gate` | Schedule a repository check |
+| `/verify-gate log` | Show the last 60 output lines |
+| `/verify-gate off` | Disable checks and cancel active checks |
+| `/verify-gate on` | Enable checks |
 
 The mod records successful Edit, Write, and NotebookEdit paths.
 After a top-level interactive turn, it groups those paths by Git repository.

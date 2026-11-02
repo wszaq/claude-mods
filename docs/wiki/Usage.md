@@ -29,15 +29,15 @@ Use a command that is valid for your repository.
 The mod runs this command as your user, with the repository root as its working folder.
 The array is a program and its arguments. It is not a shell expression.
 
-1. Run `/verify` to schedule the check.
+1. Run `/verify-gate` to schedule the check.
 2. Read the result in the band or footer.
-3. If the check fails, run `/verify log` to read the last output.
+3. If the check fails, run `/verify-gate log` to read the last output.
 4. Fix the cause of the failure.
-5. Run `/verify` again.
+5. Run `/verify-gate` again.
 
 After a turn edits a matching file, verify-gate schedules the check automatically.
-Run `/verify off` to stop automatic checks in the current session.
-Run `/verify on` to enable them again.
+Run `/verify-gate off` to stop automatic checks in the current session.
+Run `/verify-gate on` to enable them again.
 
 ## Try the other commands
 
