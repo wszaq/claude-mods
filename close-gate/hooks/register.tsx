@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
-import type { Register } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 import type { Facts } from '../types'
-import { mark } from './look'
+import { COLOR_DIR, POSE, card, cardsOn, chatColor, critter, hashColor, parseColor, stack } from './critter.mjs'
 
 const facts = atom({ plugin: 'close-gate', key: 'facts' } as const, null)
 const hidden = atom({ plugin: 'close-gate', key: 'hidden' } as const, false)
@@ -73,6 +73,17 @@ function factText(f: Facts | null, now: number) {
   ].join('\n')
 }
 
+// This chat's color: Cache Keeper's file for it, else the id's own color, as Nate's mods do.
+async function chatHex($: EngineInterface): Promise<string> {
+  const id = await $.session.id()
+  try {
+    const path = `${(await $.env.get('HOME')) ?? ''}${COLOR_DIR}/${id}.json`
+    const picked = parseColor(await $.fs.read(path))
+    if (picked !== null) return chatColor(picked).hex
+  } catch { /* No file: the id's own color. */ }
+  return chatColor(hashColor(id)).hex
+}
+
 export const register: Register = on => {
   let interactive = true
   on('session.start', async ($, e, next) => {
@@ -134,13 +145,14 @@ export const register: Register = on => {
     try {
       const f = await read($, facts)
       if (!f || e.props.hasSurvey || await read($, hidden)) return next(e)
-      const kit = $.ui.resolve(e)
-      const { Box, Text, Button } = kit
+      const el = $.ui.resolve(e)
+      const { Box, Text, Button } = el
       const clear = !f.changed && !f.ahead && !f.behind && !f.worktrees && !f.ports.length && !f.openItems
       const below = await next(e)
       if (clear) return below
-      const mine = <Box columnGap={2}><Text>{mark(kit, 'warn')} {bandText(f, await $.clock.now())}{' '}</Text><Box flexShrink={0}><Button key="hide" label="Hide" hotkey="x" plain onPress={() => update($, hidden, () => true)} /></Box></Box>
-      return <Box flexDirection="column">{mine}{below}</Box>
+      const hex = await chatHex($)
+      const mine = card(el, hex, [<Box key="close-gate" columnGap={2}>{critter(el, e.surface, hex, POSE.waiting, 20, 'close-gate')}<Text>{bandText(f, await $.clock.now())}{' '}</Text><Box flexShrink={0}><Button key="hide" label="Hide" hotkey="x" plain onPress={() => update($, hidden, () => true)} /></Box></Box>], 1)
+      return stack(el, mine, below, cardsOn(e, el))
     } catch { return next(e) }
   })
 

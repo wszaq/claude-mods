@@ -29,7 +29,7 @@ function world(on: Parameters<typeof mock.clock>[0], status: string, items = '',
       : ''
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
-  on('fs.read', ($, e) => ({ value: e.path.endsWith('.md') ? items : JSON.stringify({ claim }) }))
+  on('fs.read', ($, e) => ({ value: e.path.endsWith('.md') ? items : e.path.includes('/chat-colors/') ? '{"color":1}' : JSON.stringify({ claim }) }))
   return clock
 }
 
@@ -57,7 +57,9 @@ test('band shows changed, unpushed and open items', async ($, on) => {
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'close-gate', surface, component: 'AbovePrompt', props: BAND })
     expect(await ui.find({ type: 'Text', text: /2 changed · 2 unpushed · open items 2/ })).toBeDefined()
-    expect((await ui.find({ type: 'Text', text: /^●$/ }))?.props.color).toBe('warning')
+    const hex = '#E2B33A' // the yellow chat: Cache Keeper's file says color 1
+    if (surface === 'desktop') expect(String((await ui.find({ type: 'Svg' }))?.props.source)).toContain(hex)
+    else expect((await ui.find({ type: 'Text', text: '▐' }))?.props.color).toBe(hex)
     expect(await ui.find({ type: 'Text', text: 'MARKER' })).toBeDefined()
     await ui.unmount()
   }
