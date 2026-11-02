@@ -1,19 +1,48 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
-import type { Board, Radar, Repo } from '../types'
+import type { Board, Radar, Repo, Session } from '../types'
+import { COLOR_DIR, POSE, chatColor, critter, hashColor, parseColor } from './critter.mjs'
 import { parseBoard, parseCounts, quote, relayTarget, statusText } from './helpers'
-import { card, mark, type Mark } from './look'
+import { card, mark } from './look'
 
 const PANE = 'peer-radar'
 const radarState = atom({ plugin: 'peer-radar', key: 'radar' } as const, null as Radar | null)
 const collapsed = atom({ plugin: 'peer-radar', key: 'collapsed' } as const, {} as Record<string, boolean>)
-const STATE: Record<string, Mark> = { BUSY: 'active', ACTIVE: 'active', IDLE: 'idle' }
+const FULL_ID = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.(?:json|md)$/
 const LIST = 'python3 ~/.claude/hooks/session-register.py --list'
 const VAULT = 'systemctl --user show sh-vault-stable-sync.service -p Result -p ActiveEnterTimestamp --value'
 const JOURNAL = 'journalctl --user -u sh-vault-stable-sync -n 40 --no-pager'
 
 async function run($: EngineInterface, argv: string[], timeoutMs = 15000) {
   return $.process.run(argv, { timeoutMs })
+}
+
+// The pose of a row's critter, from the board state.
+function poseOf(state: string) {
+  const key = state.toUpperCase()
+  return key === 'BUSY' || key === 'ACTIVE' ? POSE.working : key === 'IDLE' ? POSE.idle : POSE.waiting
+}
+
+// The chat color index of each local row, by short id. The short id starts the full session id, which
+// the claims folder names. Cache Keeper's file for the full id wins, else the hash of the full id,
+// as the session's own mods draw it. With no full id, the hash of the short id.
+async function localColors($: EngineInterface, home: string, sessions: Session[]): Promise<Record<string, number>> {
+  const colors: Record<string, number> = {}
+  let names: string[] = []
+  try {
+    names = (await $.fs.list(`${home}/.claude/session-claims`)).map(entry => entry.name)
+  } catch { /* No claims folder: hash the short ids. */ }
+  const uuids = names.flatMap(name => { const match = FULL_ID.exec(name); return match ? [match[1]!] : [] })
+  for (const { id } of sessions) {
+    const full = uuids.find(uuid => uuid.startsWith(id))
+    colors[id] = hashColor(full ?? id)
+    if (!full) continue
+    try {
+      const picked = parseColor(await $.fs.read(`${home}${COLOR_DIR}/${full}.json`))
+      if (picked !== null) colors[id] = picked
+    } catch { /* No file: the id's own color. */ }
+  }
+  return colors
 }
 
 type Runtime = { running: boolean; platform: string; host: string; peerHost: string; repos: string[] }
@@ -78,7 +107,8 @@ async function collect($: EngineInterface, runtime: Runtime) {
         }
       }
     } catch { /* The vault row is optional. */ }
-    const radar: Radar = { local, peer, repos: sync, vault, platform: runtime.platform, host: runtime.host, at }
+    const colors = await localColors($, runtime.host, local.sessions)
+    const radar: Radar = { local, peer, repos: sync, vault, colors, platform: runtime.platform, host: runtime.host, at }
     await update($, radarState, () => radar)
     await $.ui.status(statusText(radar))
   } catch {
@@ -149,12 +179,13 @@ export const register: Register = (on, options) => {
     })
     const refresh = <Button key="refresh" plain onPress={() => collect($, runtime)}><Text dimColor>↻ Refresh</Text></Button>
     if (!radar) return <Box flexDirection="column"><Text dimColor>Waiting for the first collection.</Text>{refresh}</Box>
-    const board = (id: string, title: string, b: Board) => card(kit, id, title, [
+    const board = (id: string, title: string, b: Board, colors?: Record<string, number>) => card(kit, id, title, [
       b.error === 'disabled' && <Text key="error" dimColor>{mark(kit, 'idle')} Peer is disabled.</Text>,
       b.error && b.error !== 'disabled' && <Text key="error">{mark(kit, 'fail')} {b.error}</Text>,
       ...b.sessions.map(s => (
-        <Box key={`session-${s.id}`} flexDirection="row" gap={1}>
-          <Text>{mark(kit, STATE[s.state.toUpperCase()] ?? 'warn')} {s.id}</Text>
+        <Box key={`session-${s.id}`} flexDirection="row" gap={1} alignItems="center">
+          {critter(kit, e.surface, chatColor(colors?.[s.id] ?? hashColor(s.id)).hex, poseOf(s.state), 16, s.id)}
+          <Text>{s.id}</Text>
           <Text dimColor>{s.state} {s.age} {s.workspace}</Text>
           <Text wrap="truncate-end">{s.claim}</Text>
         </Box>
@@ -165,7 +196,7 @@ export const register: Register = (on, options) => {
     const clean = (repo: Repo) => repo.ahead === 0 && repo.behind === 0 && repo.dirty === 0
     return (
       <Box flexDirection="column">
-        {board('local', `This machine (${radar.platform === 'Darwin' ? 'macOS' : 'Linux'})`, radar.local)}
+        {board('local', `This machine (${radar.platform === 'Darwin' ? 'macOS' : 'Linux'})`, radar.local, radar.colors)}
         {board('peer', 'Peer', radar.peer)}
         {card(kit, 'sync', 'Sync', radar.repos.length === 0 ? <Text dimColor>No repositories configured.</Text> : radar.repos.map(repo => (
           <Box key={`repo-${repo.name}`} flexDirection="row" gap={1}>

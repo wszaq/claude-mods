@@ -146,29 +146,60 @@ test('default configuration does not contact a peer or fetch personal repositori
   expect(calls.some(argv => argv.includes('fetch'))).toBe(false)
 })
 
-test('collected pane draws cards with colored marks and folds a card', { options: { peerHost: 'off' } }, async ($, on) => {
+// Three local rows: a1b2 has a full id and a color file, c3d4 has no full id, f1e2 has a full id and a bad file.
+const claimed = [
+  'a1b2c3d4-0000-4000-8000-000000000001', 'f1e2a3b4-0000-4000-8000-000000000003',
+].flatMap(id => [`${id}.json`, `${id}.md`]).concat('c3d4e5f6-stub.md', 'a1b2c3d4-0000-4000-8000-000000000001.plan.md')
+const three = [table, 'blocked  f1e2    claude  /work/three                9m     0      Carol     asks a question'].join('\n')
+const entry = (name: string) => ({ name, kind: 'file' as const, size: 0, mtimeMs: 0, isLink: false })
+
+test('collected pane draws cards with critters in chat colors and folds a card', { options: { peerHost: 'off' } }, async ($, on) => {
   const clock = mock.clock(on, { now: 600000 })
   const store = new Map<string, unknown>()
   on('store.get', ($, e) => ({ value: store.get(e.key) }))
   on('store.set', ($, e) => { store.set(e.key, e.value); return { value: undefined } })
   mock.env(on, { HOME: '/Users/test' })
   on('process.run', ($, e) => {
-    const stdout = e.argv[0] === 'uname' ? 'Darwin\n' : e.argv.includes('--list') ? table : ''
+    const stdout = e.argv[0] === 'uname' ? 'Darwin\n' : e.argv.includes('--list') ? three : ''
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('fs.exists', () => ({ value: false }))
+  on('fs.list', ($, e) => {
+    if (e.path !== '/Users/test/.claude/session-claims') throw new Error('ENOENT')
+    return { value: claimed.map(entry) }
+  })
+  on('fs.read', ($, e) => {
+    if (e.path === '/Users/test/.claude/mods-data/chat-colors/a1b2c3d4-0000-4000-8000-000000000001.json') return { value: '{"color":5}' }
+    if (e.path === '/Users/test/.claude/mods-data/chat-colors/f1e2a3b4-0000-4000-8000-000000000003.json') return { value: 'not json' }
+    throw new Error('ENOENT')
+  })
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('ui.status', () => ({ value: undefined }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
   await clock.advance(5000)
   const props = { title: 'Peer radar', isFocused: true, bodyColumns: 80, placement: 'inline', scroll: { bodyRows: 20, offset: 0 }, view: {} } as const
+  // a1b2: the file says brown (5). c3d4: no full id, so the hash of the short id (green). f1e2: a bad file, so the hash of the full id (blue).
+  const hexes = ['#A06A47', '#5DAE5B', '#4A8FE0']
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'peer-radar', surface, component: 'Pane', requestId: 'peer-radar', props })
     expect(await ui.find({ type: 'Text', text: 'This machine (macOS)' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Peer is disabled.' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'No repositories configured.' })).toBeDefined()
-    expect((await ui.findAll({ type: 'Text', text: /^[●○✓✗]$/ })).map(one => one.props.color)).toEqual(['claude', 'inactive', 'inactive'])
+    // The session rows have no status glyph now: only the disabled-peer mark is left.
+    expect((await ui.findAll({ type: 'Text', text: /^[●○✓✗]$/ })).map(one => one.props.color)).toEqual(['inactive'])
+    if (surface === 'desktop') {
+      const drawn = await ui.findAll({ type: 'Svg' })
+      expect(drawn.map(one => one.props.alt)).toEqual(['a1b2', 'c3d4', 'f1e2'])
+      drawn.forEach((one, i) => expect(String(one.props.source)).toContain(hexes[i]!))
+      // Poses: a1b2 works (running legs), c3d4 sleeps (z), f1e2 waits (?).
+      expect(String(drawn[0]!.props.source)).toContain('calcMode="discrete"')
+      expect(String(drawn[1]!.props.source)).toContain('>z<')
+      expect(String(drawn[2]!.props.source)).toContain('>?<')
+    } else {
+      expect((await ui.findAll({ type: 'Text', text: '▐' })).map(one => one.props.color)).toEqual(hexes)
+      expect((await ui.findAll({ type: 'Text', text: /^(• •|- -)$/ })).map(one => one.text)).toEqual(['• •', '- -', '• •'])
+    }
     expect(await ui.find({ key: 'refresh' })).toBeDefined()
     await ui.unmount()
   }
@@ -178,4 +209,38 @@ test('collected pane draws cards with colored marks and folds a card', { options
   expect(store.get('collapsed')).toEqual({ local: true })
   await ui.press({ key: 'toggle-local' })
   expect(await ui.find({ type: 'Text', text: /a1b2/ })).toBeDefined()
+})
+
+test('peer rows and a failed claims listing use the hash color of the short id', { options: { peerHost: 'peer.example' } }, async ($, on) => {
+  const clock = mock.clock(on, { now: 600000 })
+  mock.store(on)
+  mock.env(on, { HOME: '/Users/test' })
+  on('process.run', ($, e) => {
+    const command = e.argv.join(' ')
+    const stdout = e.argv[0] === 'uname' ? 'Darwin\n'
+      : command.includes('--list') ? (command.startsWith('ssh') ? table.replace('a1b2', 'e5f6').replace('c3d4', 'g7h8') : table)
+      : ''
+    return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('fs.exists', () => ({ value: false }))
+  on('fs.list', () => { throw new Error('EACCES') })
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('ui.status', () => ({ value: undefined }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  await clock.advance(5000)
+  const props = { title: 'Peer radar', isFocused: true, bodyColumns: 80, placement: 'inline', scroll: { bodyRows: 20, offset: 0 }, view: {} } as const
+  // Local a1b2, c3d4, then peer e5f6, g7h8: orange, green, purple, orange.
+  const hexes = ['#E8853D', '#5DAE5B', '#A070D8', '#E8853D']
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'peer-radar', surface, component: 'Pane', requestId: 'peer-radar', props })
+    if (surface === 'desktop') {
+      const drawn = await ui.findAll({ type: 'Svg' })
+      expect(drawn.map(one => one.props.alt)).toEqual(['a1b2', 'c3d4', 'e5f6', 'g7h8'])
+      drawn.forEach((one, i) => expect(String(one.props.source)).toContain(hexes[i]!))
+    } else {
+      expect((await ui.findAll({ type: 'Text', text: '▐' })).map(one => one.props.color)).toEqual(hexes)
+    }
+    await ui.unmount()
+  }
 })
