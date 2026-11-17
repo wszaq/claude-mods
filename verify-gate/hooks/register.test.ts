@@ -88,6 +88,12 @@ test('selects pytest.ini', async ($, on) => {
   expect(kit.spawned).toEqual([['python3', '-m', 'pytest', '-q', '-x']])
 })
 
+test('runs pytest through uv in a uv project', async ($, on) => {
+  const kit = fixture(on, { '/repo/pyproject.toml': '[tool.pytest.ini_options]\n', '/repo/uv.lock': '' })
+  await editAndFinish($, kit.clock, '/repo/a.py')
+  expect(kit.spawned).toEqual([['uv', 'run', 'pytest', '-q', '-x']])
+})
+
 test('ignores the npm placeholder and finds pytest', async ($, on) => {
   const kit = fixture(on, {
     '/repo/package.json': JSON.stringify({ scripts: { test: 'echo "Error: no test specified" && exit 1' } }),

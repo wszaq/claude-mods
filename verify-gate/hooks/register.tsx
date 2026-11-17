@@ -57,7 +57,9 @@ async function choose($: EngineInterface, root: string, files: string[], manual 
   }
 
   if (await $.fs.exists(`${root}/pytest.ini`) || await $.fs.exists(`${root}/pyproject.toml`) && (await $.fs.read(`${root}/pyproject.toml`)).includes('[tool.pytest')) {
-    return { argv: ['python3', '-m', 'pytest', '-q', '-x'], cwd: root, name: 'pytest', timeoutMs: 120000 }
+    // A uv project keeps pytest in its own environment, not in the system python3.
+    const runner = await $.fs.exists(`${root}/uv.lock`) ? ['uv', 'run', 'pytest'] : ['python3', '-m', 'pytest']
+    return { argv: [...runner, '-q', '-x'], cwd: root, name: 'pytest', timeoutMs: 120000 }
   }
   return null
 }
