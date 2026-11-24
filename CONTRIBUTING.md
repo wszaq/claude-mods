@@ -1,16 +1,22 @@
 # Contributing
 
-Open an issue before a large behavior change.
+## Report a bug
+
+Open an issue.
 Describe the user problem, the expected result, and the smallest example that reproduces it.
 Include the operating system, Claude Code version, and mod version.
 Remove credentials, private paths, and session content from examples.
 
+## Propose a change
+
+Open an issue before a large behavior change.
+
 ## Local checks
 
 Clone the repository. Use Claude Code with function-hook test support.
-Run all five validation and test commands from the README before a change.
+Run the validation and test commands from the README before a change.
 Add a regression test before a bug fix. Confirm that it fails for the expected reason.
-Run all five checks after the change.
+Run the same checks after the change.
 
 The suite uses fixed inputs and scripted assertions. The checks do not need a model judge.
 
