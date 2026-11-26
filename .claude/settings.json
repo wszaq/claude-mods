@@ -13,8 +13,7 @@
       "Read(//**/.env.local)",
       "Read(//**/.env.production)",
       "Bash(git push --force:*)",
-      "Bash(git push -f:*)",
-      "Bash(rm -rf:*)"
+      "Bash(git push -f:*)"
     ]
   }
 }
