@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(node_modules)",
+      "Read(dist)",
+      "Read(build)",
+      "Read(.next)",
+      "Read(coverage)",
+      "Read(__pycache__)",
+      "Read(.venv)",
+      "Read(target)",
+      "Read(//**/.env)",
+      "Read(//**/.env.local)",
+      "Read(//**/.env.production)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(rm -rf:*)"
+    ]
+  }
+}
